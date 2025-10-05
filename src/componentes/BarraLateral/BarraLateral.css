@@ -1,0 +1,94 @@
+.barra-lateral {
+  width: 260px;
+  background-color: var(--cor-primaria);
+  color: var(--cor-texto-claro);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem 1rem;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+.logo-container {
+  text-align: center;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.logo-texto {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--cor-secundaria);
+}
+
+.navegacao-principal {
+  flex: 1;
+  margin-top: 2rem;
+}
+
+.navegacao-principal ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.5rem;
+  color: #e0e0e0;
+  text-decoration: none;
+  border-radius: var(--borda-radius);
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.nav-link:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: var(--cor-texto-claro);
+}
+
+.nav-link.active {
+  background-color: var(--cor-secundaria);
+  color: var(--cor-primaria);
+  font-weight: 600;
+}
+
+.nav-link svg {
+  margin-right: 1rem;
+  font-size: 1.2rem;
+}
+
+.usuario-info {
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.usuario-detalhes {
+    display: flex;
+    flex-direction: column;
+}
+
+.usuario-nome {
+  font-weight: 600;
+}
+
+.usuario-papel {
+  font-size: 0.8rem;
+  color: #bdbdbd;
+}
+
+.botao-logout {
+  background: none;
+  border: none;
+  color: #e0e0e0;
+  font-size: 1.5rem;
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.botao-logout:hover {
+  color: var(--cor-secundaria);
+}

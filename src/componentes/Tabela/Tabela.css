@@ -1,0 +1,33 @@
+.tabela-container {
+  overflow-x: auto;
+  background-color: var(--cor-fundo-card);
+  border-radius: var(--borda-radius);
+  box-shadow: var(--sombra-padrao);
+}
+
+.tabela {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tabela th, .tabela td {
+  padding: 1rem 1.2rem;
+  text-align: left;
+  border-bottom: 1px solid var(--cor-borda);
+}
+
+.tabela th {
+  background-color: #f7f9fc;
+  font-weight: 600;
+  color: #555;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+}
+
+.tabela tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.tabela tbody tr:hover {
+  background-color: #f7f9fc;
+}

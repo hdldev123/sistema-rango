@@ -1,0 +1,120 @@
+/* Reset Básico e Estilos Globais */
+:root {
+  --cor-primaria: #0d47a1; /* Azul escuro */
+  --cor-primaria-clara: #1976d2; /* Azul */
+  --cor-secundaria: #ff8f00; /* Laranja */
+  --cor-fundo: #f4f6f8;
+  --cor-fundo-card: #ffffff;
+  --cor-texto: #333333;
+  --cor-texto-claro: #ffffff;
+  --cor-borda: #e0e0e0;
+  --cor-sucesso: #4caf50;
+  --cor-erro: #f44336;
+  --cor-aviso: #ffc107;
+
+  --sombra-padrao: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --borda-radius: 8px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background-color: var(--cor-fundo);
+  color: var(--cor-texto);
+  line-height: 1.6;
+}
+
+a {
+  text-decoration: none;
+  color: var(--cor-primaria);
+}
+
+ul {
+  list-style: none;
+}
+
+/* Estilos de Formulário */
+.input-grupo {
+  margin-bottom: 1rem;
+}
+
+.input-grupo label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.input-grupo input,
+.input-grupo select {
+  width: 100%;
+  padding: 0.8rem;
+  border: 1px solid var(--cor-borda);
+  border-radius: var(--borda-radius);
+  font-size: 1rem;
+}
+
+.input-grupo input:focus,
+.input-grupo select:focus {
+  outline: none;
+  border-color: var(--cor-primaria);
+  box-shadow: 0 0 0 2px rgba(13, 71, 161, 0.2);
+}
+
+/* Botões */
+.botao {
+  padding: 0.8rem 1.5rem;
+  border: none;
+  border-radius: var(--borda-radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.2s;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.botao:hover {
+  transform: translateY(-2px);
+}
+
+.botao-primario {
+  background-color: var(--cor-primaria);
+  color: var(--cor-texto-claro);
+}
+
+.botao-primario:hover {
+  background-color: var(--cor-primaria-clara);
+}
+
+.botao-secundario {
+  background-color: transparent;
+  color: var(--cor-primaria);
+  border: 1px solid var(--cor-primaria);
+}
+
+.botao-secundario:hover {
+  background-color: rgba(13, 71, 161, 0.05);
+}
+
+.botao-perigo {
+    background-color: var(--cor-erro);
+    color: var(--cor-texto-claro);
+}
+.botao-perigo:hover {
+    background-color: #d32f2f;
+}
+
+
+/* Títulos */
+.titulo-pagina {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: var(--cor-primaria);
+}

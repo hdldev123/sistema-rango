@@ -1,0 +1,52 @@
+.rotas-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.rota-card {
+    background-color: var(--cor-fundo-card);
+    padding: 1.5rem;
+    border-radius: var(--borda-radius);
+    box-shadow: var(--sombra-padrao);
+}
+
+.rota-cep {
+    font-size: 1.3rem;
+    color: var(--cor-primaria);
+    border-bottom: 2px solid var(--cor-primaria-clara);
+    padding-bottom: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+.pedido-card {
+    border: 1px solid var(--cor-borda);
+    padding: 1rem;
+    border-radius: var(--borda-radius);
+    margin-bottom: 1rem;
+}
+
+.pedido-cliente {
+    font-weight: 600;
+}
+
+.pedido-endereco {
+    color: #555;
+    margin-bottom: 0.5rem;
+}
+
+.pedido-total {
+    font-weight: 600;
+}
+
+.status-tag {
+    padding: 0.3rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: #fff;
+}
+
+.status-a_caminho {
+    background-color: var(--cor-aviso);
+}

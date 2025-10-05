@@ -1,0 +1,40 @@
+.cabecalho-pagina {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.acoes-tabela {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.botao-icone {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+}
+
+.botao-icone:hover {
+  background-color: #e0e0e0;
+}
+
+.botao-icone svg {
+  font-size: 1.2rem;
+  color: var(--cor-primaria-clara);
+}
+
+.botao-icone-perigo svg {
+    color: var(--cor-erro);
+}
+
+.botao-icone-perigo:hover {
+    background-color: rgba(244, 67, 54, 0.1);
+}

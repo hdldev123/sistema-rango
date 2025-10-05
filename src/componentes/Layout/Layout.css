@@ -1,0 +1,16 @@
+.layout-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+.conteudo-principal {
+  flex: 1;
+  background-color: var(--cor-fundo);
+  padding: 2rem;
+  overflow-y: auto;
+}
+
+.conteudo-wrapper {
+  max-width: 1200px;
+  margin: 0 auto;
+}
