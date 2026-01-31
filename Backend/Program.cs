@@ -111,27 +111,35 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// Initialize database and seed data
+// Initialize database - O script SQL deve ser executado manualmente no Supabase
+// As tabelas são criadas via Scripts/create_tables.sql
+// O seed de dados também é feito via script SQL
+// 
+// Se quiser testar a conexão com o banco, descomente o bloco abaixo:
+/*
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
     try
     {
         var context = services.GetRequiredService<AppDbContext>();
-        var authService = services.GetRequiredService<IAuthService>();
         
-        // Aplica migrations automaticamente (use com cuidado em produção)
-        await context.Database.MigrateAsync();
+        // Testa conexão com o banco
+        var canConnect = await context.Database.CanConnectAsync();
+        var logger = services.GetRequiredService<ILogger<Program>>();
         
-        // Seed dados iniciais
-        await DbInitializer.SeedAsync(context, authService);
+        if (canConnect)
+            logger.LogInformation("? Conexão com banco de dados estabelecida com sucesso!");
+        else
+            logger.LogWarning("?? Não foi possível conectar ao banco de dados.");
     }
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Erro ao inicializar o banco de dados.");
+        logger.LogError(ex, "? Erro ao conectar ao banco de dados.");
     }
 }
+*/
 
 // Configure the HTTP request pipeline.
 

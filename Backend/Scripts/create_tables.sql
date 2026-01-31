@@ -65,8 +65,8 @@ CREATE INDEX IF NOT EXISTS idx_itens_pedido_produto_id ON itens_pedido(produto_i
 CREATE INDEX IF NOT EXISTS idx_produtos_categoria ON produtos(categoria);
 CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
 
--- Inserir usuário administrador padrão (senha: admin123)
--- Hash SHA256 de "admin123" = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9" em base64
+-- Inserir usuario administrador padrao (senha: admin123)
+-- Hash SHA256 de "admin123" em Base64
 INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) 
-VALUES ('Administrador', 'admin@xsalgados.com', 'JAvlGPq+JENhLbMDFhBDILTsHG4zWwsD+yMGoFYZbcQ=', 1, true)
+VALUES ('Administrador', 'admin@xsalgados.com', 'JAvlGPq9JyTdtvBO6x2llnRI1+gxwIyPqCKAn3THIKk=', 1, true)
 ON CONFLICT (email) DO NOTHING;
