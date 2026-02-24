@@ -1,28 +1,29 @@
-import { simularLatencia } from './api';
-import usuarios from '../mock/usuarios.json';
+import api from './api';
+import { mapUsuarioDoBackend } from '../utils/mapeamentos';
 
-export const apiLogin = (email, senha) => {
-  return new Promise((resolve, reject) => {
-    setTimeout(() => {
-      const usuarioEncontrado = usuarios.find(
-        u => u.email === email && u.senha === senha // Em um app real, use bcrypt para comparar hashes de senha
-      );
+/**
+ * Realiza login no backend.
+ * POST /api/auth/login
+ * @param {string} email
+ * @param {string} senha
+ * @returns {Promise<{ token: string, usuario: import('../types/index').Usuario }>}
+ */
+export const apiLogin = async (email, senha) => {
+  const response = await api.post('/api/auth/login', { email, senha });
+  const { token, usuario, expiracao } = response.data;
 
-      if (usuarioEncontrado) {
-        const { senha, ...dadosUsuario } = usuarioEncontrado;
-        resolve({
-          token: 'token_jwt_simulado_12345',
-          usuario: dadosUsuario,
-        });
-      } else {
-        reject(new Error('Credenciais inválidas'));
-      }
-    }, 1000); // Latência fixa de 1s para login
-  });
+  return {
+    token,
+    usuario: mapUsuarioDoBackend(usuario),
+    expiracao,
+  };
 };
 
+/**
+ * Realiza logout (limpa localStorage — o backend é stateless com JWT).
+ * @returns {Promise<void>}
+ */
 export const apiLogout = () => {
-    // Em um app real, você poderia invalidar o token no backend
-    console.log("Logout realizado, token invalidado (simulação).");
-    return Promise.resolve();
-}
+  console.log('Logout realizado, token removido.');
+  return Promise.resolve();
+};

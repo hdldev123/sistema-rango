@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { buscarPedidosPorStatus, atualizarStatusPedido } from '../../servicos/apiPedidos';
+import { buscarRotasDeEntrega } from '../../servicos/apiEntregas';
+import { buscarPedidosPorStatus } from '../../servicos/apiPedidos';
 import { usePedidos } from '../../contextos/ContextoPedidos';
 import Spinner from '../../componentes/Spinner/Spinner';
 import './RotasDeEntregas.css';
@@ -52,8 +53,8 @@ function RotasDeEntrega() {
     setErro(null);
     
     try {
-      // Buscar pedidos com status 'PRONTO' (prontos para entrega)
-      const resposta = await buscarPedidosPorStatus('PRONTO');
+      // Buscar pedidos prontos/em entrega via endpoint de entregas
+      const resposta = await buscarRotasDeEntrega();
       
       if (resposta.dados && resposta.dados.length > 0) {
         const rotasCriadas = criarRotasAutomaticas(resposta.dados);

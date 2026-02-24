@@ -41,6 +41,7 @@ export function ProvedorAutenticacao({ children }) {
       setUsuario(dadosUsuario);
       
       // Redireciona o usuário com base na sua função (role)
+      // O mapeamento de perfil→role já foi feito no apiAutenticacao.js
       switch (dadosUsuario.role) {
         case 'ADMINISTRADOR':
         case 'ATENDENTE':
@@ -55,8 +56,8 @@ export function ProvedorAutenticacao({ children }) {
 
     } catch (erro) {
       console.error("Falha no login:", erro);
-      // Aqui, você poderia definir um estado de erro para exibir na UI
-      throw erro; // Propaga o erro para o componente de Login tratar
+      // Propaga o erro com a mensagem do backend (tratada pelo interceptor)
+      throw erro;
     }
   }, [navigate]);
 
