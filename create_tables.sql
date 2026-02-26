@@ -1,7 +1,7 @@
 -- Script SQL para criar as tabelas no Supabase (PostgreSQL)
 -- Execute este script no SQL Editor do Supabase
 
--- Tabela de Usu�rios
+-- Tabela de Usu�rios
 CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY,
     nome VARCHAR(100) NOT NULL,
@@ -52,10 +52,10 @@ CREATE TABLE IF NOT EXISTS itens_pedido (
     pedido_id INTEGER NOT NULL REFERENCES pedidos(id) ON DELETE CASCADE,
     produto_id INTEGER NOT NULL REFERENCES produtos(id) ON DELETE RESTRICT,
     quantidade INTEGER NOT NULL,
-    preco_unitario_snapshot DECIMAL(10,2) NOT NULL -- Pre�o salvo no momento da venda
+    preco_unitario_snapshot DECIMAL(10,2) NOT NULL -- Pre�o salvo no momento da venda
 );
 
--- �ndices para performance
+-- �ndices para performance
 CREATE INDEX IF NOT EXISTS idx_pedidos_cliente_id ON pedidos(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_pedidos_status ON pedidos(status);
 CREATE INDEX IF NOT EXISTS idx_pedidos_data_criacao ON pedidos(data_criacao);
@@ -65,8 +65,12 @@ CREATE INDEX IF NOT EXISTS idx_itens_pedido_produto_id ON itens_pedido(produto_i
 CREATE INDEX IF NOT EXISTS idx_produtos_categoria ON produtos(categoria);
 CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
 
--- Inserir usuario administrador padrao (senha: admin123)
--- Hash SHA256 de "admin123" em Base64
-INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) 
-VALUES ('Administrador', 'admin@xsalgados.com', 'JAvlGPq9JyTdtvBO6x2llnRI1+gxwIyPqCKAn3THIKk=', 1, true)
-ON CONFLICT (email) DO NOTHING;
+-- ATENÇÃO: O backend agora usa bcrypt para senhas (não mais SHA256).
+-- NÃO use o INSERT abaixo diretamente. Em vez disso, após criar as tabelas,
+-- execute o seed do Node.js: npm run seed
+-- Isso criará o admin com hash bcrypt correto.
+
+-- INSERT antigo (SHA256 - INCOMPATÍVEL com o backend atual):
+-- INSERT INTO usuarios (nome, email, senha_hash, perfil, ativo) 
+-- VALUES ('Administrador', 'admin@xsalgados.com', 'JAvlGPq9JyTdtvBO6x2llnRI1+gxwIyPqCKAn3THIKk=', 1, true)
+-- ON CONFLICT (email) DO NOTHING;

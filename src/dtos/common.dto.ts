@@ -4,15 +4,15 @@ import { z } from 'zod';
 export const PaginacaoSchema = z.object({
   pagina: z.coerce.number().int().min(1).default(1),
   tamanhoPagina: z.coerce.number().int().min(1).max(100).default(10),
-});
+}).passthrough(); // Preserva query params extras (busca, status, categoria, etc.)
 export type PaginacaoDto = z.infer<typeof PaginacaoSchema>;
 
 // ─── Resultado Paginado (tipo genérico, não precisa de Zod) ──────────
 export interface ResultadoPaginadoDto<T> {
   dados: T[];
-  paginaAtual: number;
+  pagina: number;
   tamanhoPagina: number;
-  totalItens: number;
+  total: number;
   totalPaginas: number;
   temProxima: boolean;
   temAnterior: boolean;
@@ -20,19 +20,19 @@ export interface ResultadoPaginadoDto<T> {
 
 export function criarResultadoPaginado<T>(
   dados: T[],
-  paginaAtual: number,
+  pagina: number,
   tamanhoPagina: number,
-  totalItens: number,
+  total: number,
 ): ResultadoPaginadoDto<T> {
-  const totalPaginas = Math.ceil(totalItens / tamanhoPagina);
+  const totalPaginas = Math.ceil(total / tamanhoPagina);
   return {
     dados,
-    paginaAtual,
+    pagina,
     tamanhoPagina,
-    totalItens,
+    total,
     totalPaginas,
-    temProxima: paginaAtual < totalPaginas,
-    temAnterior: paginaAtual > 1,
+    temProxima: pagina < totalPaginas,
+    temAnterior: pagina > 1,
   };
 }
 
