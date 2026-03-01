@@ -1,0 +1,19 @@
+# Dependências
+node_modules/
+
+# Build gerado pelo TypeScript
+dist/
+
+# Arquivos de ambiente (contêm senhas e chaves)
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
