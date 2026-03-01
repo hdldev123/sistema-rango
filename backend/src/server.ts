@@ -45,18 +45,45 @@ app.use(routes);
 app.use(errorHandler);
 
 // ─── Inicialização ───────────────────────────────────────────────────
+// O servidor HTTP sobe IMEDIATAMENTE — não aguarda o banco.
+// Isso garante que o /api-docs e o health check respondam na hora,
+// mesmo que a conexão com o Supabase demore ou falhe.
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
+  console.log(`📋 Ambiente: ${process.env.NODE_ENV || 'development'}`);
+
+  // Swagger carregado de forma lazy (require após o servidor subir),
+  // evitando que a compilação pesada do zod-to-json-schema + swagger-ui-express
+  // atrase o startup do servidor.
+  if (process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const swaggerUi = require('swagger-ui-express');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { swaggerDocument } = require('./config/swagger');
+    app.use(
+      '/api-docs',
+      swaggerUi.serve,
+      swaggerUi.setup(swaggerDocument, {
+        customSiteTitle: 'X Salgados API Docs',
+        swaggerOptions: {
+          persistAuthorization: true,
+          filter: true,
+          displayRequestDuration: true,
+        },
+      }),
+    );
+    console.log(`📄 Swagger UI:  http://localhost:${PORT}/api-docs`);
+  }
+});
+
+// Conexão com o banco em paralelo — erro aqui não derruba o processo.
 AppDataSource.initialize()
   .then(() => {
-    console.log('✅ Conexão com banco de dados estabelecida com sucesso!');
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Servidor rodando em http://localhost:${PORT}`);
-      console.log(`📋 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-    });
+    console.log('✅ Banco de dados conectado com sucesso!');
   })
   .catch((error) => {
-    console.error('❌ Erro ao conectar ao banco de dados:', error);
-    process.exit(1);
+    console.error('❌ Erro ao conectar ao banco de dados:', error.message);
+    console.error('⚠️  API rodando sem banco. Verifique as variáveis DB_* no .env');
   });
 
 export default app;
