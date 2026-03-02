@@ -1,8 +1,7 @@
-import 'reflect-metadata';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { AppDataSource } from './config/database';
+import { testarConexao } from './config/database';
 import routes from './routes';
 import { errorHandler } from './middlewares/error.middleware';
 
@@ -76,14 +75,14 @@ app.listen(PORT, () => {
   }
 });
 
-// Conexão com o banco em paralelo — erro aqui não derruba o processo.
-AppDataSource.initialize()
-  .then(() => {
-    console.log('✅ Banco de dados conectado com sucesso!');
-  })
-  .catch((error) => {
-    console.error('❌ Erro ao conectar ao banco de dados:', error.message);
-    console.error('⚠️  API rodando sem banco. Verifique as variáveis DB_* no .env');
+// Conexão com o Supabase em paralelo — erro aqui não derruba o processo.
+testarConexao()
+  .then((ok) => {
+    if (ok) {
+      console.log('✅ Banco de dados Supabase conectado com sucesso!');
+    } else {
+      console.error('⚠️  API rodando sem banco. Verifique SUPABASE_URL e SUPABASE_KEY no .env');
+    }
   });
 
 export default app;

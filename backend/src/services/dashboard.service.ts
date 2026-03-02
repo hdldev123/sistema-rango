@@ -1,6 +1,4 @@
-import { AppDataSource } from '../config/database';
-import { Pedido } from '../models/Pedido';
-import { Cliente } from '../models/Cliente';
+import { supabase } from '../config/database';
 import { StatusPedido, StatusPedidoLabel } from '../models/enums';
 import {
   DashboardKpisDto,
@@ -8,9 +6,6 @@ import {
   DistribuicaoStatusDto,
   DashboardCompletoDto,
 } from '../dtos/dashboard.dto';
-
-const pedidoRepo = () => AppDataSource.getRepository(Pedido);
-const clienteRepo = () => AppDataSource.getRepository(Cliente);
 
 // ─── KPIs ────────────────────────────────────────────────────────────
 export async function obterKpisAsync(): Promise<DashboardKpisDto> {
@@ -20,51 +15,45 @@ export async function obterKpisAsync(): Promise<DashboardKpisDto> {
   amanha.setUTCDate(amanha.getUTCDate() + 1);
 
   // Executar consultas em paralelo para performance
-  const [receitaTotalResult, totalPedidos, totalClientes, pedidosPendentes, pedidosHoje, receitaHojeResult] =
-    await Promise.all([
-      // Receita total (apenas pedidos entregues)
-      pedidoRepo()
-        .createQueryBuilder('p')
-        .select('COALESCE(SUM(p.valor_total), 0)', 'total')
-        .where('p.status = :status', { status: StatusPedido.Entregue })
-        .getRawOne(),
+  const [pedidosResult, clientesResult, pedidosHojeResult] = await Promise.all([
+    // Todos os pedidos (status + valor)
+    supabase.from('pedidos').select('status, valor_total, data_criacao'),
+    // Total de clientes
+    supabase.from('clientes').select('id', { count: 'exact', head: true }),
+    // Pedidos criados hoje
+    supabase
+      .from('pedidos')
+      .select('status, valor_total')
+      .gte('data_criacao', hoje.toISOString())
+      .lt('data_criacao', amanha.toISOString()),
+  ]);
 
-      // Total de pedidos
-      pedidoRepo().count(),
+  const pedidos = pedidosResult.data || [];
+  const totalPedidos = pedidos.length;
+  const totalClientes = clientesResult.count || 0;
 
-      // Total de clientes
-      clienteRepo().count(),
+  // Receita total (apenas pedidos entregues)
+  const receitaTotal = pedidos
+    .filter((p: any) => p.status === StatusPedido.Entregue)
+    .reduce((sum: number, p: any) => sum + Number(p.valor_total), 0);
 
-      // Pedidos pendentes (Pendente + EmProducao + Pronto)
-      pedidoRepo()
-        .createQueryBuilder('p')
-        .where('p.status IN (:...statuses)', {
-          statuses: [StatusPedido.Pendente, StatusPedido.EmProducao, StatusPedido.Pronto],
-        })
-        .getCount(),
+  // Pedidos pendentes (Pendente + EmProducao + Pronto)
+  const pedidosPendentes = pedidos.filter((p: any) =>
+    [StatusPedido.Pendente, StatusPedido.EmProducao, StatusPedido.Pronto].includes(p.status),
+  ).length;
 
-      // Pedidos criados hoje
-      pedidoRepo()
-        .createQueryBuilder('p')
-        .where('p.data_criacao >= :hoje AND p.data_criacao < :amanha', { hoje, amanha })
-        .getCount(),
-
-      // Receita hoje (entregues criados hoje)
-      pedidoRepo()
-        .createQueryBuilder('p')
-        .select('COALESCE(SUM(p.valor_total), 0)', 'total')
-        .where('p.data_criacao >= :hoje AND p.data_criacao < :amanha', { hoje, amanha })
-        .andWhere('p.status = :status', { status: StatusPedido.Entregue })
-        .getRawOne(),
-    ]);
+  const pedidosHoje = pedidosHojeResult.data || [];
+  const receitaHoje = pedidosHoje
+    .filter((p: any) => p.status === StatusPedido.Entregue)
+    .reduce((sum: number, p: any) => sum + Number(p.valor_total), 0);
 
   return {
-    receitaTotal: parseFloat(receitaTotalResult?.total || '0'),
+    receitaTotal,
     totalPedidos,
     totalClientes,
     pedidosPendentes,
-    pedidosHoje,
-    receitaHoje: parseFloat(receitaHojeResult?.total || '0'),
+    pedidosHoje: pedidosHoje.length,
+    receitaHoje,
   };
 }
 
@@ -77,47 +66,64 @@ export async function obterPedidosPorMesAsync(meses: number = 6): Promise<Pedido
 
   const nomesMeses = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
-  const dados = await pedidoRepo()
-    .createQueryBuilder('p')
-    .select('EXTRACT(YEAR FROM p.data_criacao)::int', 'ano')
-    .addSelect('EXTRACT(MONTH FROM p.data_criacao)::int', 'mes')
-    .addSelect('COUNT(*)::int', 'totalPedidos')
-    .addSelect(
-      `COALESCE(SUM(CASE WHEN p.status = ${StatusPedido.Entregue} THEN p.valor_total ELSE 0 END), 0)`,
-      'receitaTotal',
-    )
-    .where('p.data_criacao >= :dataInicio', { dataInicio })
-    .groupBy('ano')
-    .addGroupBy('mes')
-    .orderBy('ano', 'ASC')
-    .addOrderBy('mes', 'ASC')
-    .getRawMany();
+  const { data: pedidos, error } = await supabase
+    .from('pedidos')
+    .select('data_criacao, status, valor_total')
+    .gte('data_criacao', dataInicio.toISOString());
 
-  return dados.map((d) => ({
-    ano: d.ano,
-    mes: d.mes,
-    mesNome: nomesMeses[d.mes] || '',
-    totalPedidos: parseInt(d.totalPedidos),
-    receitaTotal: parseFloat(d.receitaTotal),
-  }));
+  if (error) throw new Error(error.message);
+
+  // Agrupar por ano/mês no lado do cliente
+  const grupoMap = new Map<string, { ano: number; mes: number; totalPedidos: number; receitaTotal: number }>();
+
+  for (const p of pedidos || []) {
+    const data = new Date(p.data_criacao);
+    const ano = data.getUTCFullYear();
+    const mes = data.getUTCMonth() + 1;
+    const key = `${ano}-${mes}`;
+
+    if (!grupoMap.has(key)) {
+      grupoMap.set(key, { ano, mes, totalPedidos: 0, receitaTotal: 0 });
+    }
+    const grupo = grupoMap.get(key)!;
+    grupo.totalPedidos++;
+    if (p.status === StatusPedido.Entregue) {
+      grupo.receitaTotal += Number(p.valor_total);
+    }
+  }
+
+  return Array.from(grupoMap.values())
+    .sort((a, b) => a.ano - b.ano || a.mes - b.mes)
+    .map((d) => ({
+      ano: d.ano,
+      mes: d.mes,
+      mesNome: nomesMeses[d.mes] || '',
+      totalPedidos: d.totalPedidos,
+      receitaTotal: d.receitaTotal,
+    }));
 }
 
 // ─── Distribuição de Status ──────────────────────────────────────────
 export async function obterDistribuicaoStatusAsync(): Promise<DistribuicaoStatusDto[]> {
-  const total = await pedidoRepo().count();
+  const { data: pedidos, error } = await supabase
+    .from('pedidos')
+    .select('status');
+
+  if (error) throw new Error(error.message);
+
+  const total = (pedidos || []).length;
   if (total === 0) return [];
 
-  const distribuicao = await pedidoRepo()
-    .createQueryBuilder('p')
-    .select('p.status', 'status')
-    .addSelect('COUNT(*)::int', 'quantidade')
-    .groupBy('p.status')
-    .getRawMany();
+  // Agrupar por status no lado do cliente
+  const statusCount = new Map<number, number>();
+  for (const p of pedidos || []) {
+    statusCount.set(p.status, (statusCount.get(p.status) || 0) + 1);
+  }
 
-  return distribuicao.map((d) => ({
-    status: StatusPedidoLabel[d.status as StatusPedido] || d.status.toString(),
-    quantidade: parseInt(d.quantidade),
-    percentual: Math.round((parseInt(d.quantidade) / total) * 10000) / 100,
+  return Array.from(statusCount.entries()).map(([status, quantidade]) => ({
+    status: StatusPedidoLabel[status as StatusPedido] || status.toString(),
+    quantidade,
+    percentual: Math.round((quantidade / total) * 10000) / 100,
   }));
 }
 

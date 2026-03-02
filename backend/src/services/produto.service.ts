@@ -1,20 +1,17 @@
-import { AppDataSource } from '../config/database';
-import { Produto } from '../models/Produto';
+import { supabase } from '../config/database';
 import { ProdutoDto, CriarProdutoDto, AtualizarProdutoDto } from '../dtos/produto.dto';
 import { PaginacaoDto, ResultadoPaginadoDto, criarResultadoPaginado } from '../dtos/common.dto';
 
-const produtoRepo = () => AppDataSource.getRepository(Produto);
-
 // ─── Mapper ──────────────────────────────────────────────────────────
-function mapToDto(produto: Produto): ProdutoDto {
+function mapToDto(p: any): ProdutoDto {
   return {
-    id: produto.id,
-    nome: produto.nome,
-    categoria: produto.categoria,
-    descricao: produto.descricao,
-    preco: Number(produto.preco),
-    ativo: produto.ativo,
-    dataCriacao: produto.dataCriacao,
+    id: p.id,
+    nome: p.nome,
+    categoria: p.categoria,
+    descricao: p.descricao,
+    preco: Number(p.preco),
+    ativo: p.ativo,
+    dataCriacao: p.data_criacao,
   };
 }
 
@@ -24,61 +21,73 @@ export async function obterTodosAsync(
   categoria?: string,
   apenasAtivos?: boolean,
 ): Promise<ResultadoPaginadoDto<ProdutoDto>> {
-  const repo = produtoRepo();
-  const qb = repo.createQueryBuilder('p');
+  let query = supabase
+    .from('produtos')
+    .select('*', { count: 'exact' });
 
   if (categoria) {
-    qb.andWhere('p.categoria = :categoria', { categoria });
+    query = query.eq('categoria', categoria);
   }
 
   if (apenasAtivos !== undefined && apenasAtivos !== null) {
-    qb.andWhere('p.ativo = :ativo', { ativo: apenasAtivos });
+    query = query.eq('ativo', apenasAtivos);
   }
 
-  const totalItens = await qb.getCount();
+  query = query
+    .order('categoria', { ascending: true })
+    .order('nome', { ascending: true })
+    .range(
+      (paginacao.pagina - 1) * paginacao.tamanhoPagina,
+      paginacao.pagina * paginacao.tamanhoPagina - 1,
+    );
 
-  qb.orderBy('p.categoria', 'ASC')
-    .addOrderBy('p.nome', 'ASC')
-    .skip((paginacao.pagina - 1) * paginacao.tamanhoPagina)
-    .take(paginacao.tamanhoPagina);
+  const { data, count, error } = await query;
+  if (error) throw new Error(error.message);
 
-  const produtos = await qb.getMany();
-  const dados = produtos.map(mapToDto);
-
-  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, totalItens);
+  const dados = (data || []).map(mapToDto);
+  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, count || 0);
 }
 
 // ─── Buscar por ID ───────────────────────────────────────────────────
 export async function obterPorIdAsync(id: number): Promise<ProdutoDto | null> {
-  const produto = await produtoRepo().findOneBy({ id });
-  return produto ? mapToDto(produto) : null;
+  const { data, error } = await supabase
+    .from('produtos')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) return null;
+  return mapToDto(data);
 }
 
 // ─── Listar categorias ───────────────────────────────────────────────
 export async function obterCategoriasAsync(): Promise<string[]> {
-  const result = await produtoRepo()
-    .createQueryBuilder('p')
-    .select('DISTINCT p.categoria', 'categoria')
-    .orderBy('p.categoria', 'ASC')
-    .getRawMany();
+  const { data, error } = await supabase
+    .from('produtos')
+    .select('categoria');
 
-  return result.map((r) => r.categoria);
+  if (error) throw new Error(error.message);
+
+  const categorias = [...new Set((data || []).map((p: any) => p.categoria as string))].sort();
+  return categorias;
 }
 
 // ─── Criar ───────────────────────────────────────────────────────────
 export async function criarAsync(dto: CriarProdutoDto): Promise<ProdutoDto> {
-  const repo = produtoRepo();
+  const { data, error } = await supabase
+    .from('produtos')
+    .insert({
+      nome: dto.nome,
+      categoria: dto.categoria,
+      descricao: dto.descricao ?? null,
+      preco: dto.preco,
+      ativo: dto.ativo,
+    })
+    .select()
+    .single();
 
-  const produto = repo.create({
-    nome: dto.nome,
-    categoria: dto.categoria,
-    descricao: dto.descricao ?? null,
-    preco: dto.preco,
-    ativo: dto.ativo,
-  });
-
-  const salvo = await repo.save(produto);
-  return mapToDto(salvo);
+  if (error) throw new Error(error.message);
+  return mapToDto(data);
 }
 
 // ─── Atualizar ───────────────────────────────────────────────────────
@@ -86,25 +95,32 @@ export async function atualizarAsync(
   id: number,
   dto: AtualizarProdutoDto,
 ): Promise<ProdutoDto | null> {
-  const repo = produtoRepo();
-  const produto = await repo.findOneBy({ id });
-  if (!produto) return null;
+  const { data, error } = await supabase
+    .from('produtos')
+    .update({
+      nome: dto.nome,
+      categoria: dto.categoria,
+      descricao: dto.descricao ?? null,
+      preco: dto.preco,
+      ativo: dto.ativo,
+    })
+    .eq('id', id)
+    .select()
+    .single();
 
-  produto.nome = dto.nome;
-  produto.categoria = dto.categoria;
-  produto.descricao = dto.descricao ?? null;
-  produto.preco = dto.preco;
-  produto.ativo = dto.ativo;
-
-  const salvo = await repo.save(produto);
-  return mapToDto(salvo);
+  if (error) return null;
+  return mapToDto(data);
 }
 
 // ─── Excluir ─────────────────────────────────────────────────────────
 export async function excluirAsync(id: number): Promise<boolean> {
-  const produto = await produtoRepo().findOneBy({ id });
-  if (!produto) return false;
+  const { data, error } = await supabase
+    .from('produtos')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .single();
 
-  await produtoRepo().remove(produto);
+  if (error || !data) return false;
   return true;
 }

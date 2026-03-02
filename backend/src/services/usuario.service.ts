@@ -1,6 +1,5 @@
-import { AppDataSource } from '../config/database';
-import { Usuario } from '../models/Usuario';
-import { PerfilUsuarioLabel } from '../models/enums';
+import { supabase } from '../config/database';
+import { PerfilUsuario, PerfilUsuarioLabel } from '../models/enums';
 import {
   UsuarioDto,
   CriarUsuarioDto,
@@ -11,17 +10,15 @@ import { PaginacaoDto, ResultadoPaginadoDto, criarResultadoPaginado } from '../d
 import { hashSenha, verificarSenha } from './auth.service';
 import { InvalidOperationError } from '../middlewares/error.middleware';
 
-const usuarioRepo = () => AppDataSource.getRepository(Usuario);
-
 // ─── Mapper ──────────────────────────────────────────────────────────
-function mapToDto(usuario: Usuario): UsuarioDto {
+function mapToDto(u: any): UsuarioDto {
   return {
-    id: usuario.id,
-    nome: usuario.nome,
-    email: usuario.email,
-    perfil: PerfilUsuarioLabel[usuario.perfil] || usuario.perfil.toString(),
-    dataCriacao: usuario.dataCriacao,
-    ativo: usuario.ativo,
+    id: u.id,
+    nome: u.nome,
+    email: u.email,
+    perfil: PerfilUsuarioLabel[u.perfil as PerfilUsuario] || u.perfil.toString(),
+    dataCriacao: u.data_criacao,
+    ativo: u.ativo,
   };
 }
 
@@ -29,48 +26,62 @@ function mapToDto(usuario: Usuario): UsuarioDto {
 export async function obterTodosAsync(
   paginacao: PaginacaoDto,
 ): Promise<ResultadoPaginadoDto<UsuarioDto>> {
-  const repo = usuarioRepo();
+  const { data, count, error } = await supabase
+    .from('usuarios')
+    .select('id, nome, email, perfil, data_criacao, ativo', { count: 'exact' })
+    .order('data_criacao', { ascending: false })
+    .range(
+      (paginacao.pagina - 1) * paginacao.tamanhoPagina,
+      paginacao.pagina * paginacao.tamanhoPagina - 1,
+    );
 
-  const totalItens = await repo.count();
+  if (error) throw new Error(error.message);
 
-  const usuarios = await repo.find({
-    order: { dataCriacao: 'DESC' },
-    skip: (paginacao.pagina - 1) * paginacao.tamanhoPagina,
-    take: paginacao.tamanhoPagina,
-  });
-
-  const dados = usuarios.map(mapToDto);
-  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, totalItens);
+  const dados = (data || []).map(mapToDto);
+  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, count || 0);
 }
 
 // ─── Buscar por ID ───────────────────────────────────────────────────
 export async function obterPorIdAsync(id: number): Promise<UsuarioDto | null> {
-  const usuario = await usuarioRepo().findOneBy({ id });
-  return usuario ? mapToDto(usuario) : null;
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id, nome, email, perfil, data_criacao, ativo')
+    .eq('id', id)
+    .single();
+
+  if (error || !data) return null;
+  return mapToDto(data);
 }
 
 // ─── Criar ───────────────────────────────────────────────────────────
 export async function criarAsync(dto: CriarUsuarioDto): Promise<UsuarioDto> {
-  const repo = usuarioRepo();
+  // Validação de email único
+  const { data: existente } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('email', dto.email)
+    .maybeSingle();
 
-  // Validação de email único (correção de segurança)
-  const emailExiste = await repo.findOneBy({ email: dto.email });
-  if (emailExiste) {
+  if (existente) {
     throw new InvalidOperationError('Já existe um usuário cadastrado com este email.');
   }
 
   const senhaHasheada = await hashSenha(dto.senha);
 
-  const usuario = repo.create({
-    nome: dto.nome,
-    email: dto.email,
-    senhaHash: senhaHasheada,
-    perfil: dto.perfil,
-    ativo: true,
-  });
+  const { data, error } = await supabase
+    .from('usuarios')
+    .insert({
+      nome: dto.nome,
+      email: dto.email,
+      senha_hash: senhaHasheada,
+      perfil: dto.perfil,
+      ativo: true,
+    })
+    .select('id, nome, email, perfil, data_criacao, ativo')
+    .single();
 
-  const salvo = await repo.save(usuario);
-  return mapToDto(salvo);
+  if (error) throw new Error(error.message);
+  return mapToDto(data);
 }
 
 // ─── Atualizar ───────────────────────────────────────────────────────
@@ -78,17 +89,20 @@ export async function atualizarAsync(
   id: number,
   dto: AtualizarUsuarioDto,
 ): Promise<UsuarioDto | null> {
-  const repo = usuarioRepo();
-  const usuario = await repo.findOneBy({ id });
-  if (!usuario) return null;
+  const { data, error } = await supabase
+    .from('usuarios')
+    .update({
+      nome: dto.nome,
+      email: dto.email,
+      perfil: dto.perfil,
+      ativo: dto.ativo,
+    })
+    .eq('id', id)
+    .select('id, nome, email, perfil, data_criacao, ativo')
+    .single();
 
-  usuario.nome = dto.nome;
-  usuario.email = dto.email;
-  usuario.perfil = dto.perfil;
-  usuario.ativo = dto.ativo;
-
-  await repo.save(usuario);
-  return mapToDto(usuario);
+  if (error) return null;
+  return mapToDto(data);
 }
 
 // ─── Excluir (com proteção contra auto-exclusão) ─────────────────────
@@ -97,24 +111,39 @@ export async function excluirAsync(id: number, usuarioLogadoId: number): Promise
     throw new InvalidOperationError('Você não pode excluir a si mesmo.');
   }
 
-  const usuario = await usuarioRepo().findOneBy({ id });
-  if (!usuario) return false;
+  const { data, error } = await supabase
+    .from('usuarios')
+    .delete()
+    .eq('id', id)
+    .select('id')
+    .single();
 
-  await usuarioRepo().remove(usuario);
+  if (error || !data) return false;
   return true;
 }
 
 // ─── Alterar Senha ───────────────────────────────────────────────────
 export async function alterarSenhaAsync(id: number, dto: AlterarSenhaDto): Promise<boolean> {
-  const usuario = await usuarioRepo().findOneBy({ id });
-  if (!usuario) return false;
+  const { data: usuario, error } = await supabase
+    .from('usuarios')
+    .select('id, senha_hash')
+    .eq('id', id)
+    .single();
 
-  const senhaCorreta = await verificarSenha(dto.senhaAtual, usuario.senhaHash);
+  if (error || !usuario) return false;
+
+  const senhaCorreta = await verificarSenha(dto.senhaAtual, usuario.senha_hash);
   if (!senhaCorreta) {
     throw new InvalidOperationError('Senha atual incorreta.');
   }
 
-  usuario.senhaHash = await hashSenha(dto.novaSenha);
-  await usuarioRepo().save(usuario);
+  const novaSenhaHash = await hashSenha(dto.novaSenha);
+
+  const { error: updateError } = await supabase
+    .from('usuarios')
+    .update({ senha_hash: novaSenhaHash })
+    .eq('id', id);
+
+  if (updateError) throw new Error(updateError.message);
   return true;
 }

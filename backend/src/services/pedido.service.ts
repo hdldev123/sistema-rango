@@ -1,9 +1,4 @@
-import { In } from 'typeorm';
-import { AppDataSource } from '../config/database';
-import { Pedido } from '../models/Pedido';
-import { ItemPedido } from '../models/ItemPedido';
-import { Cliente } from '../models/Cliente';
-import { Produto } from '../models/Produto';
+import { supabase } from '../config/database';
 import { StatusPedido, StatusPedidoLabel } from '../models/enums';
 import {
   CriarPedidoDto,
@@ -14,32 +9,28 @@ import {
 } from '../dtos/pedido.dto';
 import { PaginacaoDto, ResultadoPaginadoDto, criarResultadoPaginado } from '../dtos/common.dto';
 
-const pedidoRepo = () => AppDataSource.getRepository(Pedido);
-const clienteRepo = () => AppDataSource.getRepository(Cliente);
-const produtoRepo = () => AppDataSource.getRepository(Produto);
-
 // ─── Mapper ──────────────────────────────────────────────────────────
-function mapToDto(pedido: Pedido): PedidoDto {
+function mapToDto(pedido: any): PedidoDto {
   return {
     id: pedido.id,
-    clienteId: pedido.clienteId,
-    clienteNome: pedido.cliente?.nome ?? '',
-    clienteTelefone: pedido.cliente?.telefone ?? null,
-    clienteEndereco: pedido.cliente?.endereco ?? null,
-    dataCriacao: pedido.dataCriacao,
-    dataEntrega: pedido.dataEntrega,
-    valorTotal: Number(pedido.valorTotal),
-    status: StatusPedidoLabel[pedido.status] || pedido.status.toString(),
+    clienteId: pedido.cliente_id,
+    clienteNome: pedido.clientes?.nome ?? '',
+    clienteTelefone: pedido.clientes?.telefone ?? null,
+    clienteEndereco: pedido.clientes?.endereco ?? null,
+    dataCriacao: pedido.data_criacao,
+    dataEntrega: pedido.data_entrega,
+    valorTotal: Number(pedido.valor_total),
+    status: StatusPedidoLabel[pedido.status as StatusPedido] || pedido.status.toString(),
     statusEnum: pedido.status,
     observacoes: pedido.observacoes,
-    itens: (pedido.itens || []).map(
-      (i): ItemPedidoResponseDto => ({
+    itens: (pedido.itens_pedido || []).map(
+      (i: any): ItemPedidoResponseDto => ({
         id: i.id,
-        produtoId: i.produtoId,
-        produtoNome: i.produto?.nome ?? '',
+        produtoId: i.produto_id,
+        produtoNome: i.produtos?.nome ?? '',
         quantidade: i.quantidade,
-        precoUnitario: Number(i.precoUnitarioSnapshot),
-        subtotal: i.quantidade * Number(i.precoUnitarioSnapshot),
+        precoUnitario: Number(i.preco_unitario_snapshot),
+        subtotal: i.quantidade * Number(i.preco_unitario_snapshot),
       }),
     ),
   };
@@ -52,63 +43,57 @@ export async function obterTodosAsync(
   dataInicio?: string,
   dataFim?: string,
 ): Promise<ResultadoPaginadoDto<PedidoResumoDto>> {
-  const qb = pedidoRepo()
-    .createQueryBuilder('p')
-    .leftJoinAndSelect('p.cliente', 'c')
-    .leftJoin('p.itens', 'i');
+  let query = supabase
+    .from('pedidos')
+    .select('*, clientes(nome), itens_pedido(quantidade)', { count: 'exact' });
 
   if (status !== undefined && status !== null) {
-    qb.andWhere('p.status = :status', { status });
+    query = query.eq('status', status);
   }
 
   if (dataInicio) {
-    qb.andWhere('p.data_criacao >= :dataInicio', { dataInicio });
+    query = query.gte('data_criacao', dataInicio);
   }
 
   if (dataFim) {
-    qb.andWhere('p.data_criacao <= :dataFim', { dataFim });
+    query = query.lte('data_criacao', dataFim);
   }
 
-  const totalItens = await qb.getCount();
+  query = query
+    .order('data_criacao', { ascending: false })
+    .range(
+      (paginacao.pagina - 1) * paginacao.tamanhoPagina,
+      paginacao.pagina * paginacao.tamanhoPagina - 1,
+    );
 
-  // Subconsulta para soma de quantidade por pedido
-  const pedidos = await pedidoRepo()
-    .createQueryBuilder('p')
-    .leftJoinAndSelect('p.cliente', 'c')
-    .leftJoin('p.itens', 'i')
-    .addSelect('COALESCE(SUM(i.quantidade), 0)', 'quantidadeItens')
-    .where(status !== undefined && status !== null ? 'p.status = :status' : '1=1', { status })
-    .andWhere(dataInicio ? 'p.data_criacao >= :dataInicio' : '1=1', { dataInicio })
-    .andWhere(dataFim ? 'p.data_criacao <= :dataFim' : '1=1', { dataFim })
-    .groupBy('p.id')
-    .addGroupBy('c.id')
-    .orderBy('p.data_criacao', 'DESC')
-    .offset((paginacao.pagina - 1) * paginacao.tamanhoPagina)
-    .limit(paginacao.tamanhoPagina)
-    .getRawAndEntities();
+  const { data, count, error } = await query;
+  if (error) throw new Error(error.message);
 
-  const dados: PedidoResumoDto[] = pedidos.entities.map((pedido, idx) => ({
+  const dados: PedidoResumoDto[] = (data || []).map((pedido: any) => ({
     id: pedido.id,
-    clienteNome: pedido.cliente?.nome ?? '',
-    dataCriacao: pedido.dataCriacao,
-    dataEntrega: pedido.dataEntrega,
-    valorTotal: Number(pedido.valorTotal),
-    status: StatusPedidoLabel[pedido.status] || pedido.status.toString(),
+    clienteNome: pedido.clientes?.nome ?? '',
+    dataCriacao: pedido.data_criacao,
+    dataEntrega: pedido.data_entrega,
+    valorTotal: Number(pedido.valor_total),
+    status: StatusPedidoLabel[pedido.status as StatusPedido] || pedido.status.toString(),
     statusEnum: pedido.status,
-    quantidadeItens: parseInt(pedidos.raw[idx]?.quantidadeItens || '0'),
+    quantidadeItens: (pedido.itens_pedido || []).reduce(
+      (sum: number, i: any) => sum + i.quantidade, 0,
+    ),
   }));
 
-  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, totalItens);
+  return criarResultadoPaginado(dados, paginacao.pagina, paginacao.tamanhoPagina, count || 0);
 }
 
 // ─── Buscar por ID ───────────────────────────────────────────────────
 export async function obterPorIdAsync(id: number): Promise<PedidoDto | null> {
-  const pedido = await pedidoRepo().findOne({
-    where: { id },
-    relations: ['cliente', 'itens', 'itens.produto'],
-  });
+  const { data: pedido, error } = await supabase
+    .from('pedidos')
+    .select('*, clientes(*), itens_pedido(*, produtos(*))')
+    .eq('id', id)
+    .single();
 
-  if (!pedido) return null;
+  if (error || !pedido) return null;
   return mapToDto(pedido);
 }
 
@@ -119,25 +104,35 @@ export async function criarAsync(
   const erros: string[] = [];
 
   // Validar cliente
-  const cliente = await clienteRepo().findOneBy({ id: dto.clienteId });
-  if (!cliente) {
+  const { data: cliente, error: clienteError } = await supabase
+    .from('clientes')
+    .select('id')
+    .eq('id', dto.clienteId)
+    .single();
+
+  if (clienteError || !cliente) {
     erros.push('Cliente não encontrado.');
     return { pedido: null, erros };
   }
 
   // Buscar produtos e validar
   const produtoIds = dto.itens.map((i) => i.produtoId);
-  const produtos = await produtoRepo().find({ where: { id: In(produtoIds) } });
+  const { data: produtos, error: produtoError } = await supabase
+    .from('produtos')
+    .select('*')
+    .in('id', produtoIds);
+
+  if (produtoError) throw new Error(produtoError.message);
 
   // Verificar produtos inexistentes
-  const idsEncontrados = new Set(produtos.map((p) => p.id));
-  const naoEncontrados = produtoIds.filter((id) => !idsEncontrados.has(id));
+  const idsEncontrados = new Set((produtos || []).map((p: any) => p.id));
+  const naoEncontrados = produtoIds.filter((pid) => !idsEncontrados.has(pid));
   if (naoEncontrados.length > 0) {
     erros.push(`Produtos não encontrados: ${naoEncontrados.join(', ')}`);
   }
 
   // Verificar produtos inativos
-  const inativos = produtos.filter((p) => !p.ativo).map((p) => p.nome);
+  const inativos = (produtos || []).filter((p: any) => !p.ativo).map((p: any) => p.nome);
   if (inativos.length > 0) {
     erros.push(`Produtos inativos não podem ser adicionados: ${inativos.join(', ')}`);
   }
@@ -147,36 +142,56 @@ export async function criarAsync(
   }
 
   // REGRA CRÍTICA: Calcular valor total usando preços do banco
-  const itens: Partial<ItemPedido>[] = [];
+  const itensParaInserir: any[] = [];
   let valorTotal = 0;
 
   for (const itemDto of dto.itens) {
-    const produto = produtos.find((p) => p.id === itemDto.produtoId)!;
+    const produto = (produtos || []).find((p: any) => p.id === itemDto.produtoId)!;
     const preco = Number(produto.preco);
     const subtotal = preco * itemDto.quantidade;
     valorTotal += subtotal;
 
-    itens.push({
-      produtoId: itemDto.produtoId,
+    itensParaInserir.push({
+      produto_id: itemDto.produtoId,
       quantidade: itemDto.quantidade,
-      precoUnitarioSnapshot: preco, // Snapshot de preço no momento da venda
+      preco_unitario_snapshot: preco, // Snapshot de preço no momento da venda
     });
   }
 
-  const pedido = pedidoRepo().create({
-    clienteId: dto.clienteId,
-    dataEntrega: dto.dataEntrega ?? null,
-    valorTotal,
-    status: StatusPedido.Pendente,
-    observacoes: dto.observacoes ?? null,
-    itens: itens as ItemPedido[],
-  });
+  // Inserir pedido
+  const { data: pedidoCriado, error: pedidoError } = await supabase
+    .from('pedidos')
+    .insert({
+      cliente_id: dto.clienteId,
+      data_entrega: dto.dataEntrega ?? null,
+      valor_total: valorTotal,
+      status: StatusPedido.Pendente,
+      observacoes: dto.observacoes ?? null,
+    })
+    .select()
+    .single();
 
-  const salvo = await pedidoRepo().save(pedido);
+  if (pedidoError) throw new Error(pedidoError.message);
+
+  // Inserir itens vinculados ao pedido
+  const itensComPedidoId = itensParaInserir.map((item) => ({
+    ...item,
+    pedido_id: pedidoCriado.id,
+  }));
+
+  const { error: itensError } = await supabase
+    .from('itens_pedido')
+    .insert(itensComPedidoId);
+
+  if (itensError) {
+    // Rollback: remove o pedido se os itens falharem
+    await supabase.from('pedidos').delete().eq('id', pedidoCriado.id);
+    throw new Error(itensError.message);
+  }
 
   // Recarregar com relações
-  const pedidoCriado = await obterPorIdAsync(salvo.id);
-  return { pedido: pedidoCriado, erros: null };
+  const pedido = await obterPorIdAsync(pedidoCriado.id);
+  return { pedido, erros: null };
 }
 
 // ─── Atualizar Status ────────────────────────────────────────────────
@@ -184,17 +199,28 @@ export async function atualizarStatusAsync(
   id: number,
   dto: AtualizarStatusDto,
 ): Promise<PedidoDto | null> {
-  const pedido = await pedidoRepo().findOneBy({ id });
-  if (!pedido) return null;
+  const { data: pedido, error: findError } = await supabase
+    .from('pedidos')
+    .select('id, data_entrega')
+    .eq('id', id)
+    .single();
 
-  pedido.status = dto.status;
+  if (findError || !pedido) return null;
+
+  const updateData: any = { status: dto.status };
 
   // Se status for Entregue, registrar data de entrega automaticamente
-  if (dto.status === StatusPedido.Entregue && !pedido.dataEntrega) {
-    pedido.dataEntrega = new Date();
+  if (dto.status === StatusPedido.Entregue && !pedido.data_entrega) {
+    updateData.data_entrega = new Date().toISOString();
   }
 
-  await pedidoRepo().save(pedido);
+  const { error } = await supabase
+    .from('pedidos')
+    .update(updateData)
+    .eq('id', id);
+
+  if (error) throw new Error(error.message);
+
   return obterPorIdAsync(id);
 }
 
@@ -206,20 +232,15 @@ export async function obterRotasHojeAsync(): Promise<PedidoDto[]> {
   const amanha = new Date(hoje);
   amanha.setUTCDate(amanha.getUTCDate() + 1);
 
-  const pedidos = await pedidoRepo()
-    .createQueryBuilder('p')
-    .leftJoinAndSelect('p.cliente', 'c')
-    .leftJoinAndSelect('p.itens', 'i')
-    .leftJoinAndSelect('i.produto', 'pr')
-    .where('(p.status = :pronto OR p.status = :emEntrega)', {
-      pronto: StatusPedido.Pronto,
-      emEntrega: StatusPedido.EmEntrega,
-    })
-    .andWhere('p.data_entrega IS NOT NULL')
-    .andWhere('p.data_entrega >= :hoje', { hoje })
-    .andWhere('p.data_entrega < :amanha', { amanha })
-    .orderBy('p.data_entrega', 'ASC')
-    .getMany();
+  const { data: pedidos, error } = await supabase
+    .from('pedidos')
+    .select('*, clientes(*), itens_pedido(*, produtos(*))')
+    .in('status', [StatusPedido.Pronto, StatusPedido.EmEntrega])
+    .not('data_entrega', 'is', null)
+    .gte('data_entrega', hoje.toISOString())
+    .lt('data_entrega', amanha.toISOString())
+    .order('data_entrega', { ascending: true });
 
-  return pedidos.map(mapToDto);
+  if (error) throw new Error(error.message);
+  return (pedidos || []).map(mapToDto);
 }

@@ -1,22 +1,40 @@
-import { DataSource } from 'typeorm';
+/**
+ * Configuração do cliente Supabase.
+ * Usa SUPABASE_URL e SUPABASE_KEY (service_role) para acesso completo ao banco.
+ */
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
-import { Usuario } from '../models/Usuario';
-import { Cliente } from '../models/Cliente';
-import { Produto } from '../models/Produto';
-import { Pedido } from '../models/Pedido';
-import { ItemPedido } from '../models/ItemPedido';
 
 dotenv.config();
 
-export const AppDataSource = new DataSource({
-  type: 'postgres',
-  host: process.env.DB_HOST,
-  port: parseInt(process.env.DB_PORT || '6543'),
-  username: process.env.DB_USERNAME,
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_DATABASE || 'postgres',
-  ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-  synchronize: false, // Tabelas criadas via SQL manual (create_tables.sql)
-  logging: process.env.NODE_ENV === 'development',
-  entities: [Usuario, Cliente, Produto, Pedido, ItemPedido],
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ SUPABASE_URL e SUPABASE_KEY devem ser definidas no .env');
+  process.exit(1);
+}
+
+export const supabase: SupabaseClient = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
 });
+
+/**
+ * Testa a conexão com o Supabase fazendo uma query simples.
+ */
+export async function testarConexao(): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('usuarios').select('id', { count: 'exact', head: true });
+    if (error) {
+      console.error('❌ Erro ao conectar ao Supabase:', error.message);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.error('❌ Erro ao conectar ao Supabase:', err.message);
+    return false;
+  }
+}

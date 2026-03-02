@@ -1,11 +1,8 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { AppDataSource } from '../config/database';
-import { Usuario } from '../models/Usuario';
-import { PerfilUsuarioLabel } from '../models/enums';
+import { supabase } from '../config/database';
+import { PerfilUsuario, PerfilUsuarioLabel } from '../models/enums';
 import { LoginDto, LoginResponseDto } from '../dtos/auth.dto';
-
-const usuarioRepo = () => AppDataSource.getRepository(Usuario);
 
 const BCRYPT_ROUNDS = 12;
 
@@ -14,13 +11,16 @@ const BCRYPT_ROUNDS = 12;
  * Equivale a AuthService.LoginAsync() do C#.
  */
 export async function loginAsync(dto: LoginDto): Promise<LoginResponseDto | null> {
-  const usuario = await usuarioRepo().findOne({
-    where: { email: dto.email, ativo: true },
-  });
+  const { data: usuario, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('email', dto.email)
+    .eq('ativo', true)
+    .single();
 
-  if (!usuario) return null;
+  if (error || !usuario) return null;
 
-  const senhaValida = await verificarSenha(dto.senha, usuario.senhaHash);
+  const senhaValida = await verificarSenha(dto.senha, usuario.senha_hash);
   if (!senhaValida) return null;
 
   const token = gerarToken(usuario);
@@ -34,14 +34,13 @@ export async function loginAsync(dto: LoginDto): Promise<LoginResponseDto | null
       id: usuario.id,
       nome: usuario.nome,
       email: usuario.email,
-      perfil: PerfilUsuarioLabel[usuario.perfil] || usuario.perfil.toString(),
+      perfil: PerfilUsuarioLabel[usuario.perfil as PerfilUsuario] || usuario.perfil.toString(),
     },
   };
 }
 
 /**
  * Gera hash bcrypt da senha.
- * CORREÇÃO DE SEGURANÇA: substitui SHA256 puro por bcrypt com salt.
  */
 export async function hashSenha(senha: string): Promise<string> {
   return bcrypt.hash(senha, BCRYPT_ROUNDS);
@@ -57,7 +56,7 @@ export async function verificarSenha(senha: string, hash: string): Promise<boole
 /**
  * Gera token JWT com claims equivalentes ao .NET.
  */
-function gerarToken(usuario: Usuario): string {
+function gerarToken(usuario: any): string {
   const jwtKey = process.env.JWT_KEY;
   if (!jwtKey) {
     throw new Error('FATAL: A chave JWT não foi configurada. Defina JWT_KEY no .env');
@@ -69,7 +68,7 @@ function gerarToken(usuario: Usuario): string {
     id: usuario.id,
     nome: usuario.nome,
     email: usuario.email,
-    perfil: PerfilUsuarioLabel[usuario.perfil] || usuario.perfil.toString(),
+    perfil: PerfilUsuarioLabel[usuario.perfil as PerfilUsuario] || usuario.perfil.toString(),
   };
 
   return jwt.sign(payload, jwtKey, {
