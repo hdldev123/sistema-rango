@@ -5,7 +5,6 @@ import Tabela from '../../componentes/Tabela/Tabela';
 import Spinner from '../../componentes/Spinner/Spinner';
 import Modal from '../../componentes/Modal/Modal';
 import FormularioProduto from './FormularioProdutos';
-import '../PaginasListagem.css';
 
 function ListagemProdutos() {
   const [produtos, setProdutos] = useState([]);
@@ -73,28 +72,54 @@ function ListagemProdutos() {
 
   const colunas = [
     { cabecalho: 'Nome', chave: 'nome' },
+    { cabecalho: 'Categoria', chave: 'categoria' },
     { cabecalho: 'Preço', render: (produto) => `R$ ${produto.preco.toFixed(2)}` },
-    { cabecalho: 'Estoque', chave: 'estoque' },
+    { cabecalho: 'Status', render: (produto) => (
+      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+        produto.ativo
+          ? 'bg-sucesso/10 text-sucesso'
+          : 'bg-grafite-100 text-grafite-400'
+      }`}>
+        {produto.ativo ? 'Ativo' : 'Inativo'}
+      </span>
+    )},
     { cabecalho: 'Ações', render: (produto) => (
-      <div className="acoes-tabela">
-        <button className='botao-icone' onClick={() => abrirModalFormulario(produto)}><FiEdit/></button>
-        <button className='botao-icone botao-icone-perigo' onClick={() => abrirModalExcluir(produto)}><FiTrash2/></button>
+      <div className="flex items-center gap-2">
+        <button
+          className="flex items-center justify-center rounded-lg p-2 text-primary-500 transition-colors hover:bg-primary-50"
+          onClick={() => abrirModalFormulario(produto)}
+        >
+          <FiEdit />
+        </button>
+        <button
+          className="flex items-center justify-center rounded-lg p-2 text-erro transition-colors hover:bg-erro/10"
+          onClick={() => abrirModalExcluir(produto)}
+        >
+          <FiTrash2 />
+        </button>
       </div>
     )},
   ];
 
   return (
-    <div>
-      <div className="cabecalho-pagina">
-        <h1 className="titulo-pagina">Produtos</h1>
-        <button className="botao botao-primario" onClick={() => abrirModalFormulario(null)}>
+    <div className="animate-fade-in">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-grafite-800">Produtos</h1>
+        <button
+          className="inline-flex items-center gap-2 rounded-xl bg-primary-500 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-primary-500/25 transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary-600 hover:shadow-xl active:translate-y-0"
+          onClick={() => abrirModalFormulario(null)}
+        >
           <FiPlus />
           Adicionar Produto
         </button>
       </div>
 
       {carregando && <Spinner />}
-      {erro && <p className="mensagem-erro">{erro}</p>}
+      {erro && (
+        <div className="rounded-xl border border-erro/20 bg-erro/10 px-4 py-3 text-sm font-medium text-erro">
+          {erro}
+        </div>
+      )}
       {!carregando && !erro && <Tabela colunas={colunas} dados={produtos} />}
 
       <Modal 
@@ -114,10 +139,22 @@ function ListagemProdutos() {
         titulo="Confirmar Exclusão"
       >
         <div>
-            <p>Tem certeza que deseja excluir o produto <strong>{produtoParaExcluir?.nome}</strong>?</p>
-            <div className='modal-acoes'>
-                <button className='botao botao-secundario' onClick={fecharModalExcluir}>Cancelar</button>
-                <button className='botao botao-perigo' onClick={handleConfirmarExclusao}>Confirmar</button>
+            <p className="text-sm text-grafite-600">
+              Tem certeza que deseja excluir o produto <strong className="text-grafite-800">{produtoParaExcluir?.nome}</strong>?
+            </p>
+            <div className="mt-6 flex justify-end gap-3 border-t border-grafite-200 pt-4">
+                <button
+                  className="rounded-xl border border-grafite-300 px-5 py-2 text-sm font-medium text-grafite-600 transition-colors hover:bg-grafite-50"
+                  onClick={fecharModalExcluir}
+                >
+                  Cancelar
+                </button>
+                <button
+                  className="rounded-xl bg-erro px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-red-700"
+                  onClick={handleConfirmarExclusao}
+                >
+                  Confirmar
+                </button>
             </div>
         </div>
       </Modal>

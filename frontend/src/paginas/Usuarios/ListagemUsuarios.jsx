@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { buscarUsuarios } from '../../servicos/apiUsuarios';
 import Tabela from '../../componentes/Tabela/Tabela';
 import Spinner from '../../componentes/Spinner/Spinner';
-import '../PaginasListagem.css';
 
 function ListagemUsuarios() {
   const [usuarios, setUsuarios] = useState([]);
@@ -33,14 +32,18 @@ function ListagemUsuarios() {
   ];
 
   return (
-    <div>
-      <div className="cabecalho-pagina">
-        <h1 className="titulo-pagina">Usuários</h1>
+    <div className="animate-fade-in">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-3xl font-bold text-grafite-800">Usuários</h1>
         {/* Botão de adicionar e modais podem ser adicionados aqui seguindo o padrão */}
       </div>
 
       {carregando && <Spinner />}
-      {erro && <p className="mensagem-erro">{erro}</p>}
+      {erro && (
+        <div className="rounded-xl border border-erro/20 bg-erro/10 px-4 py-3 text-sm font-medium text-erro">
+          {erro}
+        </div>
+      )}
       {!carregando && !erro && <Tabela colunas={colunas} dados={usuarios} />}
     </div>
   );

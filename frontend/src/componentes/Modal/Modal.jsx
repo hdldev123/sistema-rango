@@ -1,7 +1,6 @@
 import React, { useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { FiX } from 'react-icons/fi';
-import './Modal.css';
 
 /**
  * Componente reutilizável de Modal.
@@ -34,17 +33,27 @@ function Modal({ estaAberto, aoFechar, titulo, children }) {
   // Usa ReactDOM.createPortal para renderizar o modal no elemento 'modal-root' do index.html.
   return ReactDOM.createPortal(
     <>
-      <div className="modal-backdrop" onClick={aoFechar} />
-      <div className="modal-container">
-        <div className="modal-cabecalho">
-          <h2 className="modal-titulo">{titulo}</h2>
-          <button onClick={aoFechar} className="modal-botao-fechar">
-            <FiX />
+      {/* Backdrop com Glassmorphism */}
+      <div
+        className="fixed inset-0 z-[1000] bg-grafite-900/50 backdrop-blur-sm"
+        onClick={aoFechar}
+      />
+
+      {/* Container do Modal com Glassmorphism */}
+      <div className="fixed left-1/2 top-1/2 z-[1001] w-[90%] max-w-xl -translate-x-1/2 -translate-y-1/2 animate-slide-up rounded-2xl glass p-8 shadow-glass max-h-[90vh] overflow-y-auto">
+        {/* Cabeçalho */}
+        <div className="mb-6 flex items-center justify-between border-b border-grafite-200 pb-4">
+          <h2 className="text-xl font-semibold text-grafite-800">{titulo}</h2>
+          <button
+            onClick={aoFechar}
+            className="flex items-center justify-center rounded-lg p-2 text-grafite-400 transition-colors duration-200 hover:bg-erro/10 hover:text-erro"
+          >
+            <FiX className="text-xl" />
           </button>
         </div>
-        <div className="modal-conteudo">
-          {children}
-        </div>
+
+        {/* Conteúdo */}
+        <div>{children}</div>
       </div>
     </>,
     document.getElementById('modal-root')
