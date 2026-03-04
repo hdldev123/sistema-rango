@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import './Dashboard.css';
 import { buscarDashboardCompleto } from '../../servicos/apiDashboard';
 import Spinner from '../../componentes/Spinner/Spinner';
 
@@ -52,7 +51,7 @@ function Dashboard() {
   if (carregando) {
     return (
       <div>
-        <h1 className="titulo-pagina">Dashboard</h1>
+        <h1 className="mb-6 text-3xl font-bold text-grafite-800">Dashboard</h1>
         <Spinner />
       </div>
     );
@@ -61,55 +60,63 @@ function Dashboard() {
   if (erro) {
     return (
       <div>
-        <h1 className="titulo-pagina">Dashboard</h1>
-        <div className="mensagem-erro">{erro}</div>
+        <h1 className="mb-6 text-3xl font-bold text-grafite-800">Dashboard</h1>
+        <div className="rounded-xl border border-erro/20 bg-erro/10 px-4 py-3 text-sm font-medium text-erro">{erro}</div>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1 className="titulo-pagina">Dashboard</h1>
+    <div className="animate-fade-in">
+      <h1 className="mb-6 text-3xl font-bold text-grafite-800">Dashboard</h1>
       
-      <div className="kpi-grid">
-        <div className="kpi-card">
-          <h3 className="kpi-titulo">Pedidos Hoje</h3>
-          <p className="kpi-valor">{kpis?.pedidosHoje ?? 0}</p>
-        </div>
-        <div className="kpi-card">
-          <h3 className="kpi-titulo">Faturamento do Mês</h3>
-          <p className="kpi-valor">{formatarMoeda(kpis?.receitaMes)}</p>
-        </div>
-        <div className="kpi-card">
-          <h3 className="kpi-titulo">Total de Clientes</h3>
-          <p className="kpi-valor">{kpis?.totalClientes ?? 0}</p>
-        </div>
-        <div className="kpi-card">
-          <h3 className="kpi-titulo">Produtos Ativos</h3>
-          <p className="kpi-valor">{kpis?.totalProdutosAtivos ?? 0}</p>
-        </div>
+      {/* KPI Cards */}
+      <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { titulo: 'Pedidos Hoje', valor: kpis?.pedidosHoje ?? 0 },
+          { titulo: 'Faturamento do Mês', valor: formatarMoeda(kpis?.receitaMes) },
+          { titulo: 'Total de Clientes', valor: kpis?.totalClientes ?? 0 },
+          { titulo: 'Produtos Ativos', valor: kpis?.totalProdutosAtivos ?? 0 },
+        ].map((kpi, index) => (
+          <div
+            key={index}
+            className="rounded-2xl border border-grafite-200 bg-white p-6 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:shadow-lg"
+          >
+            <h3 className="mb-2 text-xs font-medium uppercase tracking-wider text-grafite-400">
+              {kpi.titulo}
+            </h3>
+            <p className="text-3xl font-bold text-grafite-800">{kpi.valor}</p>
+          </div>
+        ))}
       </div>
       
-      <div className="grafico-card">
-        <h3 className='grafico-titulo'>Vendas nos Últimos 6 Meses</h3>
+      {/* Gráfico de Vendas */}
+      <div className="rounded-2xl border border-grafite-200 bg-white p-8 shadow-soft">
+        <h3 className="mb-6 text-xl font-semibold text-grafite-800">Vendas nos Últimos 6 Meses</h3>
         {vendasData.length > 0 ? (
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={vendasData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip formatter={(value) => formatarMoeda(value)} />
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
+              <YAxis stroke="#6b7280" fontSize={12} />
+              <Tooltip
+                formatter={(value) => formatarMoeda(value)}
+                contentStyle={{
+                  borderRadius: '12px',
+                  border: '1px solid #e5e7eb',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+                }}
+              />
               <Legend />
-              <Line type="monotone" dataKey="Vendas" stroke="#0d47a1" strokeWidth={2} activeDot={{ r: 8 }} />
+              <Line type="monotone" dataKey="Vendas" stroke="#d97706" strokeWidth={3} activeDot={{ r: 8, fill: '#d97706' }} />
             </LineChart>
           </ResponsiveContainer>
         ) : (
-          <p style={{ textAlign: 'center', padding: '2rem', color: '#888' }}>
+          <p className="py-8 text-center text-grafite-400">
             Sem dados de vendas para exibir.
           </p>
         )}
       </div>
-
     </div>
   );
 }

@@ -63,15 +63,15 @@ xsalgados/
 │
 └── frontend/                    ← SPA React (JavaScript puro, sem TypeScript)
     ├── package.json             ← React 18, Vite 5, Axios, Recharts, React Router 6
-    ├── vite.config.js           ← Dev server porta 5173
+    ├── vite.config.js           ← Dev server porta 5173 + plugin Tailwind CSS v4
     └── src/
         ├── main.jsx             ← BrowserRouter + App
         ├── App.jsx              ← ProvedorAutenticacao > ProviderPedidos > RotasApp
-        ├── componentes/         ← Componentes reutilizáveis
+        ├── componentes/         ← Componentes reutilizáveis (Tailwind utility classes)
         │   ├── BarraLateral/    ← Menu lateral com filtro por role
         │   ├── Layout/          ← BarraLateral + Outlet
-        │   ├── Modal/           ← Portal React com backdrop
-        │   ├── Spinner/         ← Indicador de carregamento
+        │   ├── Modal/           ← Portal React com backdrop + glassmorphism
+        │   ├── Spinner/         ← Indicador de carregamento animado
         │   └── Tabela/          ← Tabela genérica (colunas + dados)
         ├── contextos/
         │   ├── ContextoAutenticacao.jsx ← Login/logout, token em localStorage
@@ -133,7 +133,8 @@ xsalgados/
 | Axios | 1.13.5 | HTTP client |
 | Recharts | 2.12.3 | Gráficos (Dashboard) |
 | React Icons | 5.0.1 | Ícones (Feather Icons + FontAwesome) |
-| CSS puro | — | Estilização (sem Tailwind/CSS-in-JS por design) |
+| Tailwind CSS | 4.2.1 | Framework CSS utilitário (Design System via @theme em index.css) |
+| @tailwindcss/vite | 4.2.1 | Plugin Vite para Tailwind v4 (substitui PostCSS) |
 
 ### Infraestrutura
 

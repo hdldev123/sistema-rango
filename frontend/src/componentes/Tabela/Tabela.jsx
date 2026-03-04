@@ -1,5 +1,4 @@
 import React from 'react';
-import './Tabela.css';
 
 /**
  * Componente de Tabela Reutilizável.
@@ -10,24 +9,35 @@ import './Tabela.css';
 function Tabela({ colunas, dados }) {
 
   if (!dados || dados.length === 0) {
-    return <p>Nenhum dado encontrado.</p>;
+    return <p className="py-8 text-center text-grafite-400">Nenhum dado encontrado.</p>;
   }
 
   return (
-    <div className="tabela-container">
-      <table className="tabela">
+    <div className="overflow-x-auto rounded-2xl border border-grafite-200 bg-white shadow-soft">
+      <table className="w-full border-collapse">
         <thead>
           <tr>
             {colunas.map((coluna, index) => (
-              <th key={index}>{coluna.cabecalho}</th>
+              <th
+                key={index}
+                className="sticky top-0 z-10 border-b border-grafite-200 bg-grafite-50 px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-grafite-600"
+              >
+                {coluna.cabecalho}
+              </th>
             ))}
           </tr>
         </thead>
-        <tbody>
+        <tbody className="divide-y divide-grafite-100">
           {dados.map((item, itemIndex) => (
-            <tr key={item.id || itemIndex}>
+            <tr
+              key={item.id || itemIndex}
+              className="transition-colors duration-150 hover:bg-primary-50/30"
+            >
               {colunas.map((coluna, colunaIndex) => (
-                <td key={colunaIndex}>
+                <td
+                  key={colunaIndex}
+                  className="px-6 py-4 text-sm text-grafite-700"
+                >
                   {coluna.render ? coluna.render(item) : item[coluna.chave]}
                 </td>
               ))}

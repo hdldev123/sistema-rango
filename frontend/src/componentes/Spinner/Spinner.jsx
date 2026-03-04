@@ -1,6 +1,5 @@
 import React from 'react';
 import { FaSpinner } from 'react-icons/fa';
-import './Spinner.css';
 
 /**
  * Componente de Spinner para indicar estados de carregamento.
@@ -8,8 +7,8 @@ import './Spinner.css';
  */
 function Spinner() {
   return (
-    <div className="spinner-container">
-      <FaSpinner className="spinner-icone" />
+    <div className="flex h-full min-h-[200px] w-full items-center justify-center p-8">
+      <FaSpinner className="animate-spin-slow text-4xl text-primary-500 opacity-80" />
     </div>
   );
 }

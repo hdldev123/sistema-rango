@@ -1,7 +1,6 @@
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import BarraLateral from '../BarraLateral/BarraLateral';
-import './Layout.css';
 
 /**
  * Componente de Layout Principal.
@@ -10,10 +9,10 @@ import './Layout.css';
  */
 function Layout() {
   return (
-    <div className="layout-container">
+    <div className="flex min-h-screen bg-grafite-50">
       <BarraLateral />
-      <main className="conteudo-principal">
-        <div className="conteudo-wrapper">
+      <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+        <div className="mx-auto w-full max-w-7xl">
           {/* O componente Outlet do React Router renderiza a rota filha correspondente */}
           <Outlet />
         </div>
