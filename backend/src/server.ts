@@ -85,4 +85,13 @@ testarConexao()
     }
   });
 
+// Conexão com o WhatsApp via Baileys (se habilitado).
+if (process.env.WHATSAPP_BAILEYS_ENABLED !== 'false') {
+  import('./services/baileys.service')
+    .then(({ iniciarBaileys }) => iniciarBaileys())
+    .catch((err) => {
+      console.error('⚠️  Erro ao iniciar Baileys:', err.message);
+    });
+}
+
 export default app;

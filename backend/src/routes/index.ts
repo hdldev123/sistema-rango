@@ -18,6 +18,7 @@ import * as pedidosController from '../controllers/pedidos.controller';
 import * as usuariosController from '../controllers/usuarios.controller';
 import * as entregasController from '../controllers/entregas.controller';
 import * as dashboardController from '../controllers/dashboard.controller';
+import * as whatsappController from '../controllers/whatsapp.controller';
 
 const router = Router();
 
@@ -249,5 +250,10 @@ router.get(
   authorize('Administrador'),
   dashboardController.obterDashboardCompleto,
 );
+
+// ═══════════════════════════════════════════════════════════════════════
+// WHATSAPP WEBHOOK — Público (protegido por token de webhook)
+// ═══════════════════════════════════════════════════════════════════════
+router.post('/api/whatsapp/webhook', whatsappController.receberWebhook);
 
 export default router;
