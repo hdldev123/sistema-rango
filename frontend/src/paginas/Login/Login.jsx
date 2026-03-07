@@ -26,9 +26,13 @@ function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-grafite-100 via-grafite-50 to-primary-50 p-4">
       <div className="w-full max-w-md animate-slide-up rounded-2xl glass p-10 text-center shadow-glass">
-        <h1 className="mb-1 text-4xl font-bold tracking-tight text-grafite-800">
-          X Salgados
-        </h1>
+        <div className="border-b border-grafite-200 px-6 py-5 text-center">
+        <img 
+          src="/logo.png" 
+          alt="X Salgados" 
+          className="mx-auto h-20 w-auto object-contain"
+        />
+      </div>
         <p className="mb-8 text-base text-grafite-400">
           Acesse o painel de gestão
         </p>
