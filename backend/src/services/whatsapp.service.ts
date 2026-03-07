@@ -1,9 +1,21 @@
 import { supabase } from '../config/database';
 import * as pedidoService from './pedido.service';
+import type { WASocket } from '@whiskeysockets/baileys';
+import {
+    EtapaConversa,
+    obterEstado,
+    definirEstado,
+    limparEstado,
+} from './bot-state.service';
+
+// ─── Constantes ──────────────────────────────────────────────────────
+
+/** Número WhatsApp do administrador que recebe as notificações de pedido */
+const ADMIN_JID = '5532999269379@s.whatsapp.net';
 
 // ─── Tipos internos ──────────────────────────────────────────────────
 
-/** Payload simplificado vindo da Evolution API (evento messages.upsert) */
+/** Payload simplificado vindo do Baileys (evento messages.upsert) */
 interface WhatsAppPayload {
     event?: string;
     instance?: string;
@@ -28,6 +40,27 @@ interface WhatsAppPayload {
 // ─── Utilitários ─────────────────────────────────────────────────────
 
 /**
+ * Envia uma mensagem de texto via Baileys para o JID informado.
+ * Loga um aviso caso o socket não esteja conectado.
+ *
+ * @param jid  - Destinatário (ex: `5532999999999@s.whatsapp.net`)
+ * @param text - Conteúdo da mensagem
+ */
+async function enviarMensagem(jid: string, text: string): Promise<void> {
+    // Importação lazy para evitar dependência circular com baileys.service.
+    // baileys.service já importa whatsapp.service; se usarmos import estático aqui,
+    // o CJS retorna o módulo parcialmente inicializado e getSocket fica undefined.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getSocket } = require('./baileys.service') as { getSocket: () => WASocket | null };
+    const sock = getSocket();
+    if (!sock) {
+        console.warn('[WhatsApp] Socket não disponível. Mensagem não enviada para', jid);
+        return;
+    }
+    await sock.sendMessage(jid, { text });
+}
+
+/**
  * Normaliza o número de telefone removendo sufixos do WhatsApp
  * e o código de país (55 Brasil).
  *
@@ -37,8 +70,8 @@ interface WhatsAppPayload {
  *   "(11) 99999-9999"              → "11999999999"
  */
 export function limparTelefone(raw: string): string {
-    // Remove o sufixo @s.whatsapp.net ou @c.us
-    let numero = raw.replace(/@(s\.whatsapp\.net|c\.us)$/i, '');
+    // Remove o sufixo @s.whatsapp.net, @c.us ou @lid (novo formato Linked ID do WA)
+    let numero = raw.replace(/@(s\.whatsapp\.net|c\.us|lid)$/i, '');
 
     // Remove tudo que não for dígito
     numero = numero.replace(/\D/g, '');
@@ -92,16 +125,203 @@ export function ehMensagemValida(payload: WhatsAppPayload): boolean {
     return true;
 }
 
+/**
+ * Busca um cliente no Supabase comparando o telefone normalizado.
+ * Retorna o registro do cliente ou `null` se não encontrado.
+ */
+async function buscarClientePorTelefone(telefoneLimpo: string): Promise<any | null> {
+    const { data: clientes, error } = await supabase
+        .from('clientes')
+        .select('*');
+
+    if (error || !clientes) {
+        console.error('[WhatsApp] Erro ao buscar clientes:', error?.message);
+        return null;
+    }
+
+    return clientes.find((c: any) => {
+        const telBanco = (c.telefone || '').replace(/\D/g, '');
+        return telBanco === telefoneLimpo
+            || telBanco === `55${telefoneLimpo}`
+            || `55${telBanco}` === telefoneLimpo;
+    }) ?? null;
+}
+
+/**
+ * Cadastra um novo cliente no Supabase e retorna o registro criado.
+ * Retorna `null` se ocorrer erro na inserção.
+ *
+ * @param nome      - Nome completo informado pelo cliente
+ * @param telefone  - Telefone normalizado (somente dígitos, sem código de país)
+ * @param endereco  - Endereço de entrega informado pelo cliente
+ */
+async function cadastrarCliente(
+    nome: string,
+    telefone: string,
+    endereco: string,
+): Promise<any | null> {
+    const { data, error } = await supabase
+        .from('clientes')
+        .insert({ nome, telefone, endereco })
+        .select()
+        .single();
+
+    if (error) {
+        console.error('[WhatsApp] Erro ao cadastrar cliente:', error.message);
+        return null;
+    }
+    return data;
+}
+
+/**
+ * Envia uma notificação para o administrador da loja com os dados do pedido.
+ *
+ * @param clienteNome   - Nome do cliente
+ * @param endereco      - Endereço de entrega
+ * @param textoPedido   - Texto original da mensagem do cliente (solicitação)
+ */
+async function notificarAdministrador(
+    clienteNome: string,
+    endereco: string | null,
+    textoPedido: string,
+): Promise<void> {
+    const mensagem =
+        `📋 *Novo Pedido via WhatsApp*\n\n` +
+        `👤 *Cliente:* ${clienteNome}\n` +
+        `📍 *Endereço:* ${endereco || 'Não informado'}\n` +
+        `📝 *Pedido:* ${textoPedido}`;
+
+    try {
+        await enviarMensagem(ADMIN_JID, mensagem);
+        console.log('[WhatsApp] ✅ Notificação enviada ao administrador.');
+    } catch (err: any) {
+        console.error('[WhatsApp] Falha ao notificar administrador:', err.message);
+    }
+}
+
+// ─── Fluxo de Onboarding (novo cliente) ──────────────────────────────
+
+/**
+ * Gerencia o fluxo conversacional de cadastro para clientes não registrados.
+ *
+ * Etapas:
+ * 1. INICIAL → Solicita o nome → transita para AGUARDANDO_NOME
+ * 2. AGUARDANDO_NOME → Salva nome, solicita endereço → transita para AGUARDANDO_ENDERECO
+ * 3. AGUARDANDO_ENDERECO → Cadastra cliente no Supabase → retorna ao fluxo de pedido
+ *
+ * @param remoteJid    - JID do remetente
+ * @param texto        - Texto da mensagem atual
+ * @param nomeContato  - pushName recebido do WhatsApp (usado apenas no log)
+ * @returns O cliente recém-cadastrado ou `null` se ainda estiver em onboarding
+ */
+async function processarOnboarding(
+    remoteJid: string,
+    texto: string,
+    nomeContato: string,
+): Promise<any | null> {
+    const estado = obterEstado(remoteJid);
+    const etapaAtual = estado?.etapa ?? EtapaConversa.INICIAL;
+
+    switch (etapaAtual) {
+        // ── Primeiro contato: pedir o nome
+        case EtapaConversa.INICIAL: {
+            definirEstado(remoteJid, EtapaConversa.AGUARDANDO_NOME);
+
+            await enviarMensagem(
+                remoteJid,
+                `Olá! 👋 Bem-vindo(a) à *X Salgados*!\n\n` +
+                `Ainda não temos seu cadastro. Vamos resolver isso rapidinho!\n\n` +
+                `Por favor, me diga o seu *nome completo*:`,
+            );
+
+            console.log(`[WhatsApp] Onboarding iniciado para ${nomeContato} (${remoteJid}).`);
+            return null;
+        }
+
+        // ── Recebeu o nome: pedir endereço
+        case EtapaConversa.AGUARDANDO_NOME: {
+            const nome = texto.trim();
+
+            if (nome.length < 2) {
+                await enviarMensagem(
+                    remoteJid,
+                    `Hmm, não entendi. Por favor, envie seu *nome completo*:`,
+                );
+                return null;
+            }
+
+            definirEstado(remoteJid, EtapaConversa.AGUARDANDO_ENDERECO, { nome });
+
+            await enviarMensagem(
+                remoteJid,
+                `Prazer, *${nome}*! 😊\n\nAgora preciso do seu *endereço de entrega* (rua, número, bairro):`,
+            );
+
+            console.log(`[WhatsApp] Nome coletado: "${nome}" para ${remoteJid}.`);
+            return null;
+        }
+
+        // ── Recebeu o endereço: cadastrar e seguir para pedido
+        case EtapaConversa.AGUARDANDO_ENDERECO: {
+            const endereco = texto.trim();
+
+            if (endereco.length < 5) {
+                await enviarMensagem(
+                    remoteJid,
+                    `O endereço parece muito curto. Por favor, envie o endereço completo (rua, número, bairro):`,
+                );
+                return null;
+            }
+
+            const nome = estado!.dados.nome!;
+            const telefoneLimpo = limparTelefone(remoteJid);
+
+            const novoCliente = await cadastrarCliente(nome, telefoneLimpo, endereco);
+
+            if (!novoCliente) {
+                // Falha no banco — limpar estado para não prender o usuário
+                limparEstado(remoteJid);
+                await enviarMensagem(
+                    remoteJid,
+                    `Desculpe, tivemos um problema técnico ao salvar seu cadastro. 😔\n` +
+                    `Por favor, tente novamente em alguns instantes.`,
+                );
+                return null;
+            }
+
+            // Onboarding concluído — limpar estado
+            limparEstado(remoteJid);
+
+            await enviarMensagem(
+                remoteJid,
+                `Cadastro realizado com sucesso! 🎉\n\n` +
+                `*${nome}*, agora você pode fazer seu pedido.\n` +
+                `Me diga o que deseja pedir (ex: "50 coxinhas e 30 risoles"):`,
+            );
+
+            console.log(`[WhatsApp] ✅ Cliente cadastrado: ${nome} (ID: ${novoCliente.id}).`);
+            return novoCliente;
+        }
+
+        default:
+            limparEstado(remoteJid);
+            return null;
+    }
+}
+
 // ─── Processamento Principal ─────────────────────────────────────────
 
 /**
- * Processa uma mensagem recebida do webhook do WhatsApp.
+ * Processa uma mensagem recebida do WhatsApp.
  *
  * Fluxo:
  * 1. Valida e filtra a mensagem
  * 2. Normaliza o telefone do remetente
- * 3. Busca o cliente na tabela `clientes`
- * 4. Se encontrado, cria um pedido com status Pendente
+ * 3. Verifica se há estado de onboarding pendente
+ * 4. Busca o cliente na tabela `clientes`
+ * 5. Se **não encontrado**, inicia o fluxo de onboarding
+ * 6. Se **encontrado** (ou recém-cadastrado), cria o pedido placeholder
+ * 7. Notifica o administrador via WhatsApp com o resumo do pedido
  *
  * Esta função NÃO lança exceções — todo erro é capturado e logado.
  */
@@ -127,60 +347,35 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
             return;
         }
 
-        // ── 3. Buscar cliente pelo telefone
-        // Os telefones no banco podem estar formatados (ex: "(32) 99825-3348")
-        // então buscamos todos e comparamos após normalizar ambos os lados.
-        const { data: clientes, error: clienteError } = await supabase
-            .from('clientes')
-            .select('*');
+        // ── 3. Verificar se há onboarding em andamento
+        const estadoAtual = obterEstado(remoteJid);
 
-        if (clienteError || !clientes) {
-            console.error('[WhatsApp] Erro ao buscar clientes:', clienteError?.message);
+        if (estadoAtual) {
+            // Cliente está no meio do cadastro — processar onboarding
+            const clienteOnboarding = await processarOnboarding(remoteJid, texto, nomeContato);
+
+            if (!clienteOnboarding) {
+                // Onboarding ainda em andamento; aguardando próxima resposta
+                return;
+            }
+
+            // Onboarding acabou de ser concluído, mas a mensagem atual era o endereço.
+            // O próximo texto do cliente será o pedido de fato.
             return;
         }
 
-        const cliente = clientes.find((c: any) => {
-            const telBanco = (c.telefone || '').replace(/\D/g, '');
-            // Comparar com e sem código do país
-            return telBanco === telefoneLimpo
-                || telBanco === `55${telefoneLimpo}`
-                || `55${telBanco}` === telefoneLimpo;
-        });
+        // ── 4. Buscar cliente cadastrado
+        let cliente = await buscarClientePorTelefone(telefoneLimpo);
 
+        // ── 5. Cliente não existe → iniciar onboarding
         if (!cliente) {
-            console.warn(
-                `[WhatsApp] Cliente não encontrado para telefone "${telefoneLimpo}". ` +
-                `Mensagem de ${nomeContato} ignorada.`
-            );
+            await processarOnboarding(remoteJid, texto, nomeContato);
             return;
         }
 
         console.log(`[WhatsApp] Cliente encontrado: ${cliente.nome} (ID: ${cliente.id})`);
 
-        // ── 4. Criar pedido
-        // ──────────────────────────────────────────────────────────────────
-        // TODO: PARSER DE MENSAGEM
-        //
-        // Aqui é onde deve ser implementado o parser para interpretar o
-        // texto do WhatsApp e extrair os itens do pedido.
-        //
-        // Opções de implementação:
-        //
-        //   A) Parser com IA (OpenAI / Gemini):
-        //      const itens = await parseMensagemComIA(texto);
-        //
-        //   B) Parser com Regex (leve):
-        //      const itens = parseMensagemRegex(texto);
-        //      Ex: "50 coxinhas" → buscar produto "coxinha" → { produtoId: X, quantidade: 50 }
-        //
-        //   C) Pedido genérico (atual — placeholder):
-        //      Cria o pedido com observação contendo o texto original
-        //      para o Atendente processar manualmente.
-        //
-        // Por enquanto, usamos a opção C como MVP:
-        // ──────────────────────────────────────────────────────────────────
-
-        // Buscar o primeiro produto ativo como item placeholder
+        // ── 6. Criar pedido (placeholder — MVP)
         const { data: produtoPlaceholder, error: produtoError } = await supabase
             .from('produtos')
             .select('id, preco')
@@ -191,6 +386,10 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
 
         if (produtoError || !produtoPlaceholder) {
             console.error('[WhatsApp] Nenhum produto ativo encontrado para criar pedido placeholder.');
+            await enviarMensagem(
+                remoteJid,
+                `Desculpe, estamos com um problema técnico no momento. Tente novamente mais tarde. 🙏`,
+            );
             return;
         }
 
@@ -209,13 +408,28 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
 
         if (erros && erros.length > 0) {
             console.error(`[WhatsApp] Erro ao criar pedido para ${cliente.nome}:`, erros);
+            await enviarMensagem(
+                remoteJid,
+                `Desculpe, não conseguimos registrar seu pedido agora. Tente novamente em instantes. 🙏`,
+            );
             return;
         }
 
         console.log(
             `[WhatsApp] ✅ Pedido #${pedido?.id} criado com sucesso para ${cliente.nome} ` +
-            `(valor: R$ ${pedido?.valorTotal.toFixed(2)})`
+            `(valor: R$ ${pedido?.valorTotal.toFixed(2)})`,
         );
+
+        // Confirmar recebimento para o cliente
+        await enviarMensagem(
+            remoteJid,
+            `✅ Pedido recebido, *${cliente.nome}*!\n\n` +
+            `Seu pedido foi registrado e será preparado em breve.\n` +
+            `Obrigado por escolher a *X Salgados*! 🧡`,
+        );
+
+        // ── 7. Notificar o administrador
+        await notificarAdministrador(cliente.nome, cliente.endereco, texto);
 
     } catch (error: any) {
         console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error.message);
