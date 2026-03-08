@@ -51,12 +51,13 @@ describe('excluirAsync', () => {
         expect(mockUpdate).toHaveBeenCalledWith(
             expect.objectContaining({ ativo: false }),
         );
-        const payload = mockUpdate.mock.calls[0][0] as any;
+        const calls = mockUpdate.mock.calls as any[];
+        const payload = calls[0][0];
         expect(typeof payload.deleted_at).toBe('string');
     });
 
     it('retorna false quando usuário não existe', async () => {
-        mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'not found' } });
+        mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
         expect(await excluirAsync(99, 1)).toBe(false);
     });
 });

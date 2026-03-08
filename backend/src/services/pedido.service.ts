@@ -134,7 +134,11 @@ export async function obterPorIdAsync(id: number): Promise<PedidoDto | null> {
     .eq('id', id)
     .single();
 
-  if (error || !pedido) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao buscar pedido: ${error.message}`);
+  }
+  if (!pedido) return null;
   return mapToDto(pedido);
 }
 
@@ -233,7 +237,11 @@ export async function atualizarStatusAsync(
     .eq('id', id)
     .single();
 
-  if (findError || !pedido) return null;
+  if (findError) {
+    if (findError.code === 'PGRST116') return null;
+    throw new Error(`Erro ao buscar pedido para atualização: ${findError.message}`);
+  }
+  if (!pedido) return null;
 
   const updateData: Partial<PedidoBanco> = { status: dto.status };
 

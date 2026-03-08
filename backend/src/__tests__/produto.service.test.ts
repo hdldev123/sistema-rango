@@ -26,7 +26,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('produto.obterPorIdAsync', () => {
     it('retorna null quando produto não existe', async () => {
-        mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'not found' } });
+        mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
         expect(await obterPorIdAsync(999)).toBeNull();
     });
 

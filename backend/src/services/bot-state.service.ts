@@ -58,7 +58,11 @@ export async function obterEstado(telefone: string): Promise<ConversationState |
         .eq('telefone', telefone)
         .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+        if (error.code === 'PGRST116') return null;
+        throw new Error(`Erro ao obter estado do bot: ${error.message}`);
+    }
+    if (!data) return null;
 
     const ultimaInteracao = new Date(data.atualizado_em).getTime();
 

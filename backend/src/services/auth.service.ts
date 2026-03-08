@@ -50,7 +50,11 @@ export async function loginAsync(dto: LoginDto): Promise<LoginResponseDto | null
     .is('deleted_at', null)
     .single();
 
-  if (error || !usuario) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao tentar realizar login: ${error.message}`);
+  }
+  if (!usuario) return null;
 
   const senhaValida = await verificarSenha(dto.senha, usuario.senha_hash);
   if (!senhaValida) return null;

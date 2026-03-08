@@ -51,7 +51,11 @@ export async function obterPorIdAsync(id: number): Promise<UsuarioDto | null> {
     .is('deleted_at', null)
     .single();
 
-  if (error || !data) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null; // Not found
+    throw new Error(`Erro ao obter usuário: ${error.message}`);
+  }
+  if (!data) return null;
   return mapToDto(data);
 }
 
@@ -107,7 +111,11 @@ export async function atualizarAsync(
     .select('id, nome, email, perfil, data_criacao, ativo')
     .single();
 
-  if (error) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao atualizar usuário: ${error.message}`);
+  }
+  if (!data) return null;
   return mapToDto(data);
 }
 
@@ -131,7 +139,11 @@ export async function excluirAsync(id: number, usuarioLogadoId: number): Promise
     .select('id')
     .single();
 
-  if (error || !data) return false;
+  if (error) {
+    if (error.code === 'PGRST116') return false;
+    throw new Error(`Erro ao excluir usuário: ${error.message}`);
+  }
+  if (!data) return false;
   return true;
 }
 
@@ -144,7 +156,11 @@ export async function alterarSenhaAsync(id: number, dto: AlterarSenhaDto): Promi
     .is('deleted_at', null)
     .single();
 
-  if (error || !usuario) return false;
+  if (error) {
+    if (error.code === 'PGRST116') return false;
+    throw new Error(`Erro ao verificar usuário para alteração de senha: ${error.message}`);
+  }
+  if (!usuario) return false;
 
   const senhaCorreta = await verificarSenha(dto.senhaAtual, usuario.senha_hash);
   if (!senhaCorreta) {

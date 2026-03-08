@@ -53,7 +53,11 @@ export async function obterPorIdAsync(id: number): Promise<ClienteDto | null> {
     .eq('id', id)
     .single();
 
-  if (error || !cliente) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao obter cliente: ${error.message}`);
+  }
+  if (!cliente) return null;
   return mapToDto(cliente);
 }
 
@@ -104,7 +108,10 @@ export async function atualizarAsync(
     })
     .eq('id', id);
 
-  if (error) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao atualizar cliente: ${error.message}`);
+  }
   return obterPorIdAsync(id);
 }
 

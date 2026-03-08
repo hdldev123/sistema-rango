@@ -30,7 +30,7 @@ describe('pedido.criarAsync', () => {
     const dto = { clienteId: 1, itens: [{ produtoId: 10, quantidade: 2 }] };
 
     it('retorna erros quando cliente não encontrado', async () => {
-        mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'not found' } });
+        mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
         const { pedido, erros } = await criarAsync(dto as any);
         expect(pedido).toBeNull();
         expect(erros).toContain('Cliente não encontrado.');

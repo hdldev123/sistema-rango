@@ -48,7 +48,7 @@ describe('auth.loginAsync', () => {
     const dto = { email: 'user@test.com', senha: 'senha123' };
 
     it('retorna null quando email não é encontrado', async () => {
-        mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'not found' } });
+        mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
         expect(await loginAsync(dto)).toBeNull();
     });
 
@@ -74,7 +74,7 @@ describe('auth.loginAsync', () => {
     });
 
     it('aplica filtro deleted_at IS NULL', async () => {
-        mockSingle.mockResolvedValueOnce({ data: null, error: { message: 'not found' } });
+        mockSingle.mockResolvedValueOnce({ data: null, error: { code: 'PGRST116' } });
         await loginAsync(dto);
         expect(mockIs).toHaveBeenCalledWith('deleted_at', null);
     });
