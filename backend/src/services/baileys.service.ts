@@ -9,6 +9,7 @@ import qrcode from 'qrcode-terminal';
 import pino from 'pino';
 import { Boom } from '@hapi/boom';
 import * as whatsappService from './whatsapp.service';
+import { WhatsAppPayload } from './whatsapp.service';
 import path from 'path';
 
 // ─── Estado Global ───────────────────────────────────────────────────
@@ -81,7 +82,7 @@ export async function iniciarBaileys(): Promise<void> {
             // (pode já estar disponível se a sessão já estava autenticada)
             setTimeout(() => {
                 if (!sock) return;
-                const contatos = ((sock as any).contacts ?? {}) as Record<string, any>;
+                const contatos = ((sock as { contacts?: Record<string, { id?: string; lid?: string; phoneNumber?: string }> }).contacts ?? {});
                 let novos = 0;
                 for (const c of Object.values(contatos)) {
                     const phoneJid = c?.phoneNumber || (!c?.id?.endsWith('@lid') ? c?.id : null);
@@ -138,10 +139,11 @@ export async function iniciarBaileys(): Promise<void> {
 
     sock.ev.on('contacts.update', (updates) => {
         for (const contact of updates) {
-            const phoneJid = (contact as any).phoneNumber
-                || (!contact.id?.endsWith('@lid') ? contact.id : null);
-            const lidJid = (contact as any).lid
-                || (contact.id?.endsWith('@lid') ? contact.id : null);
+            const contactTyped = contact as { id?: string; lid?: string; phoneNumber?: string };
+            const phoneJid = contactTyped.phoneNumber
+                || (!contactTyped.id?.endsWith('@lid') ? contactTyped.id : null);
+            const lidJid = contactTyped.lid
+                || (contactTyped.id?.endsWith('@lid') ? contactTyped.id : null);
 
             if (phoneJid && lidJid) {
                 lidParaPhone.set(lidJid, phoneJid);
@@ -190,7 +192,7 @@ function resolverLidParaTelefone(lidJid: string): string {
 
     // 2. Fallback: percorrer sock.contacts
     if (sock) {
-        const contatos = ((sock as any).contacts ?? {}) as Record<string, any>;
+        const contatos = ((sock as { contacts?: Record<string, { id?: string; lid?: string; phoneNumber?: string }> }).contacts ?? {});
         for (const c of Object.values(contatos)) {
             const cLid: string = c?.lid ?? '';
             const cPhone: string = c?.phoneNumber ?? '';
@@ -230,7 +232,7 @@ export function resolverJidParaEnvio(jid: string): string {
  * que deve ser usado para identificar/cadastrar o cliente no banco,
  * enquanto `remoteJid` é mantido para envio de respostas.
  */
-function baileysParaPayload(msg: proto.IWebMessageInfo): any {
+function baileysParaPayload(msg: proto.IWebMessageInfo): WhatsAppPayload {
     let conversation: string | undefined;
     let extendedText: string | undefined;
     let messageType = 'unknown';

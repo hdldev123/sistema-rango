@@ -117,7 +117,7 @@ async function logarMensagem(
 // ─── Tipos internos ──────────────────────────────────────────────────
 
 /** Payload simplificado vindo do Baileys (evento messages.upsert) */
-interface WhatsAppPayload {
+export interface WhatsAppPayload {
     event?: string;
     instance?: string;
     data?: {
@@ -145,6 +145,22 @@ interface WhatsAppPayload {
     };
 }
 
+export interface ClienteWhatsappBanco {
+    id: number;
+    nome: string;
+    telefone: string;
+    endereco: string | null;
+    whatsapp_jid: string | null;
+    whatsapp_lid: string | null;
+}
+
+export interface PedidoAtivoBanco {
+    id: number;
+    status: number;
+    data_criacao: string;
+    observacoes: string | null;
+}
+
 // ─── Utilitários ─────────────────────────────────────────────────────
 
 /**
@@ -156,11 +172,7 @@ interface WhatsAppPayload {
  */
 async function enviarMensagem(jid: string, text: string): Promise<void> {
     // Importação lazy para evitar dependência circular com baileys.service.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSocket, resolverJidParaEnvio } = require('./baileys.service') as {
-        getSocket: () => WASocket | null;
-        resolverJidParaEnvio: (jid: string) => string;
-    };
+    const { getSocket, resolverJidParaEnvio } = await import('./baileys.service');
     const sock = getSocket();
     if (!sock) {
         console.warn('[WhatsApp] Socket não disponível. Mensagem não enviada para', jid);
@@ -257,7 +269,7 @@ export function ehMensagemValida(payload: WhatsAppPayload): boolean {
  * A query `.or()` + `.limit(1).maybeSingle()` substitui o full table scan anterior,
  * reduzindo o trabalho de O(N clientes) em JS para uma busca indexada no Postgres.
  */
-async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<any | null> {
+async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<ClienteWhatsappBanco | null> {
     // Monta os filtros de telefone cobrindo as três variantes de normalização
     const telComDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo : `55${telefoneLimpo}`;
     const telSemDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo.slice(2) : telefoneLimpo;
@@ -295,7 +307,7 @@ async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: str
  * Pedido ativo = qualquer status EXCETO Entregue (5) e Cancelado (6).
  * Retorna o registro ou `null` se não existir pedido em aberto.
  */
-async function buscarPedidoAtivo(clienteId: number): Promise<any | null> {
+async function buscarPedidoAtivo(clienteId: number): Promise<PedidoAtivoBanco | null> {
     const { data, error } = await supabase
         .from('pedidos')
         .select('id, status, data_criacao, observacoes')
@@ -414,8 +426,8 @@ export async function notificarClienteStatusPedido(pedido: PedidoDto): Promise<v
     try {
         await enviarMensagem(jid, mensagem);
         console.log(`[WhatsApp] ✅ Cliente ${pedido.clienteNome} notificado sobre pedido #${pedido.id} (${statusLabel}).`);
-    } catch (err: any) {
-        console.error(`[WhatsApp] Falha ao notificar cliente sobre pedido #${pedido.id}:`, err.message);
+    } catch (error: unknown) {
+        console.error(`[WhatsApp] Falha ao notificar cliente sobre pedido #${pedido.id}:`, error instanceof Error ? error.message : error);
     }
 }
 
@@ -431,7 +443,7 @@ async function cadastrarCliente(
     nome: string,
     telefone: string,
     endereco: string,
-): Promise<any | null> {
+): Promise<ClienteWhatsappBanco | null> {
     const { data, error } = await supabase
         .from('clientes')
         .insert({ nome, telefone, endereco })
@@ -471,8 +483,8 @@ async function notificarAdministrador(
     try {
         await enviarMensagem(ADMIN_JID, mensagem);
         console.log('[WhatsApp] ✅ Notificação enviada ao administrador.');
-    } catch (err: any) {
-        console.error('[WhatsApp] Falha ao notificar administrador:', err.message);
+    } catch (error: unknown) {
+        console.error('[WhatsApp] Falha ao notificar administrador:', error instanceof Error ? error.message : error);
     }
 }
 
@@ -559,7 +571,7 @@ async function processarOnboarding(
     texto: string,
     nomeContato: string,
     telefoneLimpo: string,
-): Promise<any | null> {
+): Promise<ClienteWhatsappBanco | null> {
     const estado = await obterEstado(telefoneLimpo);
     const etapaAtual = estado?.etapa ?? EtapaConversa.INICIAL;
 
@@ -684,10 +696,7 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         // ── 2. Resolver @lid e normalizar telefone
         //    Tenta resolver o @lid para @s.whatsapp.net usando o mapa de contatos.
         //    Se não conseguir, usamos o phoneJid como recebido (pode ser @lid).
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { resolverJidParaEnvio } = require('./baileys.service') as {
-            resolverJidParaEnvio: (jid: string) => string;
-        };
+        const { resolverJidParaEnvio } = await import('./baileys.service');
         const phoneJidResolvido = resolverJidParaEnvio(phoneJid);
         const telefoneLimpo = limparTelefone(phoneJidResolvido);
 
@@ -738,7 +747,7 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         }
 
         // ── 4. Buscar cliente cadastrado (por telefone ou por whatsapp_lid como fallback)
-        let cliente = await buscarClientePorTelefone(telefoneLimpo, whatsappLid);
+        const cliente = await buscarClientePorTelefone(telefoneLimpo, whatsappLid);
 
         // ── 5. Cliente não existe → iniciar onboarding
         if (!cliente) {
@@ -792,7 +801,7 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         );
         console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Aguardando texto do pedido.`);
 
-    } catch (error: any) {
-        console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error.message);
+    } catch (error: unknown) {
+        console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error instanceof Error ? error.message : error);
     }
 }

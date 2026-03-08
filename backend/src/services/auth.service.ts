@@ -4,6 +4,13 @@ import { supabase } from '../config/database';
 import { PerfilUsuario, PerfilUsuarioLabel } from '../models/enums';
 import { LoginDto, LoginResponseDto } from '../dtos/auth.dto';
 
+interface UsuarioToken {
+  id: number;
+  nome: string;
+  email: string;
+  perfil: number | string;
+}
+
 const BCRYPT_ROUNDS = 12;
 
 // ─── Validação do JWT_KEY na inicialização ────────────────────────────────────
@@ -81,7 +88,7 @@ export async function verificarSenha(senha: string, hash: string): Promise<boole
 /**
  * Gera token JWT com claims equivalentes ao .NET.
  */
-function gerarToken(usuario: any): string {
+function gerarToken(usuario: UsuarioToken): string {
   const jwtKey = process.env.JWT_KEY;
   if (!jwtKey) {
     throw new Error('FATAL: A chave JWT não foi configurada. Defina JWT_KEY no .env');

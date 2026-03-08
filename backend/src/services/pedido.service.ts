@@ -11,22 +11,60 @@ import {
 } from '../dtos/pedido.dto';
 import { PaginacaoDto, ResultadoPaginadoDto, criarResultadoPaginado } from '../dtos/common.dto';
 
+interface ItemPedidoBanco {
+  id: number;
+  produto_id: number;
+  quantidade: number;
+  preco_unitario_snapshot: string | number;
+  produtos?: { nome: string };
+}
+
+interface PedidoBanco {
+  id: number;
+  cliente_id: number;
+  data_criacao: string;
+  data_entrega: string | null;
+  valor_total: string | number;
+  status: number;
+  observacoes: string | null;
+  clientes?: { nome: string; telefone: string | null; endereco: string | null };
+  itens_pedido?: ItemPedidoBanco[];
+}
+
+interface PedidoResumoBanco {
+  id: number;
+  cliente_id: number;
+  data_criacao: string;
+  data_entrega: string | null;
+  valor_total: string | number;
+  status: number;
+  clientes?: { nome: string };
+  itens_pedido?: { quantidade: number }[];
+}
+
+interface ProdutoBanco {
+  id: number;
+  nome: string;
+  preco: string | number;
+  ativo: boolean;
+}
+
 // ─── Mapper ──────────────────────────────────────────────────────────
-function mapToDto(pedido: any): PedidoDto {
+function mapToDto(pedido: PedidoBanco): PedidoDto {
   return {
     id: pedido.id,
     clienteId: pedido.cliente_id,
     clienteNome: pedido.clientes?.nome ?? '',
     clienteTelefone: pedido.clientes?.telefone ?? null,
     clienteEndereco: pedido.clientes?.endereco ?? null,
-    dataCriacao: pedido.data_criacao,
-    dataEntrega: pedido.data_entrega,
+    dataCriacao: new Date(pedido.data_criacao),
+    dataEntrega: pedido.data_entrega ? new Date(pedido.data_entrega) : null,
     valorTotal: Number(pedido.valor_total),
     status: StatusPedidoLabel[pedido.status as StatusPedido] || pedido.status.toString(),
     statusEnum: pedido.status,
     observacoes: pedido.observacoes,
     itens: (pedido.itens_pedido || []).map(
-      (i: any): ItemPedidoResponseDto => ({
+      (i: ItemPedidoBanco): ItemPedidoResponseDto => ({
         id: i.id,
         produtoId: i.produto_id,
         produtoNome: i.produtos?.nome ?? '',
@@ -71,17 +109,17 @@ export async function obterTodosAsync(
   const { data, count, error } = await query;
   if (error) throw new Error(error.message);
 
-  const dados: PedidoResumoDto[] = (data || []).map((pedido: any) => ({
+  const dados: PedidoResumoDto[] = (data || []).map((pedido: PedidoResumoBanco) => ({
     id: pedido.id,
     clienteId: pedido.cliente_id,
     clienteNome: pedido.clientes?.nome ?? '',
-    dataCriacao: pedido.data_criacao,
-    dataEntrega: pedido.data_entrega,
+    dataCriacao: new Date(pedido.data_criacao),
+    dataEntrega: pedido.data_entrega ? new Date(pedido.data_entrega) : null,
     valorTotal: Number(pedido.valor_total),
     status: StatusPedidoLabel[pedido.status as StatusPedido] || pedido.status.toString(),
     statusEnum: pedido.status,
     quantidadeItens: (pedido.itens_pedido || []).reduce(
-      (sum: number, i: any) => sum + i.quantidade, 0,
+      (sum: number, i: { quantidade: number }) => sum + i.quantidade, 0,
     ),
   }));
 
@@ -128,14 +166,14 @@ export async function criarAsync(
   if (produtoError) throw new Error(produtoError.message);
 
   // Verificar produtos inexistentes
-  const idsEncontrados = new Set((produtos || []).map((p: any) => p.id));
+  const idsEncontrados = new Set((produtos || []).map((p: ProdutoBanco) => p.id));
   const naoEncontrados = produtoIds.filter((pid) => !idsEncontrados.has(pid));
   if (naoEncontrados.length > 0) {
     erros.push(`Produtos não encontrados: ${naoEncontrados.join(', ')}`);
   }
 
   // Verificar produtos inativos
-  const inativos = (produtos || []).filter((p: any) => !p.ativo).map((p: any) => p.nome);
+  const inativos = (produtos || []).filter((p: ProdutoBanco) => !p.ativo).map((p: ProdutoBanco) => p.nome);
   if (inativos.length > 0) {
     erros.push(`Produtos inativos não podem ser adicionados: ${inativos.join(', ')}`);
   }
@@ -145,11 +183,11 @@ export async function criarAsync(
   }
 
   // REGRA CRÍTICA: Calcular valor total usando preços do banco
-  const itensParaInserir: any[] = [];
+  const itensParaInserir: { produto_id: number; quantidade: number; preco_unitario_snapshot: number }[] = [];
   let valorTotal = 0;
 
   for (const itemDto of dto.itens) {
-    const produto = (produtos || []).find((p: any) => p.id === itemDto.produtoId)!;
+    const produto = (produtos || []).find((p: ProdutoBanco) => p.id === itemDto.produtoId)!;
     const preco = Number(produto.preco);
     const subtotal = preco * itemDto.quantidade;
     valorTotal += subtotal;
@@ -197,7 +235,7 @@ export async function atualizarStatusAsync(
 
   if (findError || !pedido) return null;
 
-  const updateData: any = { status: dto.status };
+  const updateData: Partial<PedidoBanco> = { status: dto.status };
 
   // Se status for Entregue, registrar data de entrega automaticamente
   if (dto.status === StatusPedido.Entregue && !pedido.data_entrega) {
@@ -234,7 +272,7 @@ export async function obterLoteEntregaAsync(): Promise<LoteEntregaDto> {
   // Somar TODAS as quantidades de itens de todos os pedidos prontos
   const totalItensAcumulados = (pedidos || []).reduce((acc, pedido) => {
     const itensPedido = pedido.itens_pedido || [];
-    return acc + itensPedido.reduce((sum: number, item: any) => sum + item.quantidade, 0);
+    return acc + itensPedido.reduce((sum: number, item: ItemPedidoBanco) => sum + item.quantidade, 0);
   }, 0);
 
   return {
@@ -260,7 +298,7 @@ export async function liberarLoteAsync(): Promise<{ pedidosAfetados: number }> {
     return { pedidosAfetados: 0 };
   }
 
-  const ids = pedidosProntos.map((p: any) => p.id);
+  const ids = pedidosProntos.map((p: { id: number }) => p.id);
 
   const { error: updateError } = await supabase
     .from('pedidos')
