@@ -99,33 +99,33 @@ export function ProviderPedidos({ children }) {
   // Função para carregar pedidos
   const carregarPedidos = useCallback(async (parametros = {}) => {
     dispatch({ type: TIPOS_ACAO.CARREGAR_PEDIDOS_INICIO });
-    
+
     try {
       const resposta = await buscarPedidos(parametros);
-      dispatch({ 
-        type: TIPOS_ACAO.CARREGAR_PEDIDOS_SUCESSO, 
-        payload: resposta.dados 
+      dispatch({
+        type: TIPOS_ACAO.CARREGAR_PEDIDOS_SUCESSO,
+        payload: resposta.dados
       });
     } catch (erro) {
-      dispatch({ 
-        type: TIPOS_ACAO.CARREGAR_PEDIDOS_ERRO, 
-        payload: erro.message 
+      dispatch({
+        type: TIPOS_ACAO.CARREGAR_PEDIDOS_ERRO,
+        payload: erro.message
       });
     }
   }, []);
 
   // Função para atualizar status
   const alterarStatusPedido = useCallback(async (pedidoId, novoStatus) => {
-    dispatch({ 
-      type: TIPOS_ACAO.ATUALIZAR_STATUS_INICIO, 
-      payload: pedidoId 
+    dispatch({
+      type: TIPOS_ACAO.ATUALIZAR_STATUS_INICIO,
+      payload: pedidoId
     });
-    
+
     try {
       await atualizarStatusPedido(pedidoId, novoStatus);
-      dispatch({ 
-        type: TIPOS_ACAO.ATUALIZAR_STATUS_SUCESSO, 
-        payload: { pedidoId, novoStatus } 
+      dispatch({
+        type: TIPOS_ACAO.ATUALIZAR_STATUS_SUCESSO,
+        payload: { pedidoId, novoStatus }
       });
 
       // Limpar notificação após 3 segundos
@@ -134,9 +134,9 @@ export function ProviderPedidos({ children }) {
       }, 3000);
 
     } catch (erro) {
-      dispatch({ 
-        type: TIPOS_ACAO.ATUALIZAR_STATUS_ERRO, 
-        payload: erro.message 
+      dispatch({
+        type: TIPOS_ACAO.ATUALIZAR_STATUS_ERRO,
+        payload: erro.message
       });
 
       // Limpar notificação de erro após 5 segundos
@@ -152,7 +152,7 @@ export function ProviderPedidos({ children }) {
       const resposta = await buscarPedidosPorStatus(status);
       return resposta.dados;
     } catch (erro) {
-      console.error('Erro ao buscar pedidos por status:', erro);
+      // toast.error('Erro ao buscar pedidos por status.')
       return [];
     }
   }, []);
@@ -176,10 +176,10 @@ export function ProviderPedidos({ children }) {
   const valor = {
     // Estado
     ...estado,
-    
+
     // Seletores
     ...seletores,
-    
+
     // Ações
     carregarPedidos,
     alterarStatusPedido,
@@ -197,11 +197,11 @@ export function ProviderPedidos({ children }) {
 // Hook personalizado para usar o contexto
 export function usePedidos() {
   const contexto = useContext(ContextoPedidos);
-  
+
   if (!contexto) {
     throw new Error('usePedidos deve ser usado dentro de um ProviderPedidos');
   }
-  
+
   return contexto;
 }
 

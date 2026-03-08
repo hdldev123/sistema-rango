@@ -18,7 +18,7 @@ function Dashboard() {
       try {
         setCarregando(true);
         const dados = await buscarDashboardCompleto();
-        
+
         setKpis(dados.kpis);
 
         // Transforma pedidosPorMes no formato esperado pelo Recharts
@@ -31,7 +31,6 @@ function Dashboard() {
           setVendasData(vendas);
         }
       } catch (err) {
-        console.error('Erro ao carregar dashboard:', err);
         setErro(err.mensagem || err.message || 'Erro ao carregar dados do dashboard');
       } finally {
         setCarregando(false);
@@ -69,7 +68,7 @@ function Dashboard() {
   return (
     <div className="animate-fade-in">
       <h1 className="mb-6 text-3xl font-bold text-grafite-800">Dashboard</h1>
-      
+
       {/* KPI Cards */}
       <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {[
@@ -89,7 +88,7 @@ function Dashboard() {
           </div>
         ))}
       </div>
-      
+
       {/* Gráfico de Vendas */}
       <div className="rounded-2xl border border-grafite-200 bg-white p-8 shadow-soft">
         <h3 className="mb-6 text-xl font-semibold text-grafite-800">Vendas nos Últimos 6 Meses</h3>

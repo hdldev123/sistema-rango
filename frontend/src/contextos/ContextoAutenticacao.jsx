@@ -21,7 +21,7 @@ export function ProvedorAutenticacao({ children }) {
   useEffect(() => {
     const tokenArmazenado = localStorage.getItem('token');
     const usuarioArmazenado = localStorage.getItem('usuario');
-    
+
     if (tokenArmazenado && usuarioArmazenado) {
       setToken(tokenArmazenado);
       setUsuario(JSON.parse(usuarioArmazenado));
@@ -39,7 +39,7 @@ export function ProvedorAutenticacao({ children }) {
       localStorage.setItem('usuario', JSON.stringify(dadosUsuario));
       setToken(novoToken);
       setUsuario(dadosUsuario);
-      
+
       // Redireciona o usuário com base na sua função (role)
       // O mapeamento de perfil→role já foi feito no apiAutenticacao.js
       switch (dadosUsuario.role) {
@@ -55,7 +55,6 @@ export function ProvedorAutenticacao({ children }) {
       }
 
     } catch (erro) {
-      console.error("Falha no login:", erro);
       // Propaga o erro com a mensagem do backend (tratada pelo interceptor)
       throw erro;
     }

@@ -26,9 +26,9 @@ function FormularioProduto({ produto, aoSalvar }) {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prevState => ({ 
-        ...prevState, 
-        [name]: type === 'checkbox' ? checked : type === 'number' ? parseFloat(value) : value 
+    setFormData(prevState => ({
+      ...prevState,
+      [name]: type === 'checkbox' ? checked : type === 'number' ? parseFloat(value) : value
     }));
   };
 
@@ -42,7 +42,7 @@ function FormularioProduto({ produto, aoSalvar }) {
       }
       aoSalvar();
     } catch (error) {
-      console.error("Falha ao salvar produto:", error);
+      // Ignora erro no console para não vazar objeto de request
     }
   };
 

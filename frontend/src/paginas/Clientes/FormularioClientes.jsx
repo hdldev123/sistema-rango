@@ -32,7 +32,6 @@ function FormularioCliente({ cliente, aoSalvar }) {
       }
       aoSalvar();
     } catch (error) {
-      console.error("Falha ao salvar cliente:", error);
       // Tratar erro na UI
     }
   };

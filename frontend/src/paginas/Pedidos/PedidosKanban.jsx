@@ -61,7 +61,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
 
   const agruparPedidosPorStatus = useCallback(() => {
     const grupos = {};
-    
+
     // Inicializar todos os status
     Object.keys(STATUS_CONFIG).forEach(status => {
       grupos[status] = [];
@@ -70,7 +70,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
     // Agrupar pedidos por status
     pedidosAtualizados.forEach(pedido => {
       let statusMapeado = pedido.status;
-      
+
       // Mapear os status do backend para as colunas do Kanban
       switch (pedido.status) {
         case 'EM_PREPARO':
@@ -88,7 +88,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
         default:
           statusMapeado = pedido.status;
       }
-      
+
       if (grupos[statusMapeado]) {
         grupos[statusMapeado].push(pedido);
       }
@@ -99,12 +99,12 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
 
   const handleStatusChange = useCallback(async (pedidoId, novoStatus) => {
     setPedidoAtualizando(pedidoId);
-    
+
     try {
       // Atualizar localmente primeiro para feedback imediato
-      setPedidosAtualizados(prev => 
-        prev.map(pedido => 
-          pedido.id === pedidoId 
+      setPedidosAtualizados(prev =>
+        prev.map(pedido =>
+          pedido.id === pedidoId
             ? { ...pedido, status: novoStatus }
             : pedido
         )
@@ -115,7 +115,6 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
         await onStatusChange(pedidoId, novoStatus);
       }
     } catch (error) {
-      console.error('Erro ao atualizar status:', error);
       // Reverter mudança local em caso de erro
       setPedidosAtualizados(pedidos);
     } finally {
@@ -150,9 +149,8 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
 
   const PedidoCard = ({ pedido }) => (
     <div
-      className={`rounded-2xl border border-grafite-200 bg-white p-4 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-primary-400 hover:shadow-xl ${
-        pedidoAtualizando === pedido.id ? 'pointer-events-none opacity-70' : 'cursor-pointer'
-      }`}
+      className={`rounded-2xl border border-grafite-200 bg-white p-4 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-primary-400 hover:shadow-xl ${pedidoAtualizando === pedido.id ? 'pointer-events-none opacity-70' : 'cursor-pointer'
+        }`}
     >
       <div className="mb-2 flex items-start justify-between">
         <span className="text-xs font-semibold uppercase tracking-wider text-grafite-400">
@@ -162,15 +160,15 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
           {formatarMoeda(pedido.total)}
         </span>
       </div>
-      
+
       <div className="mb-1 text-sm font-semibold text-grafite-800">
         {obterNomeCliente(pedido.clienteId)}
       </div>
-      
+
       <div className="mb-3 text-xs text-grafite-400">
         {new Date(pedido.dataPedido).toLocaleDateString('pt-BR')}
       </div>
-      
+
       <div className="flex items-center justify-between border-t border-grafite-100 pt-3">
         <StatusDropdown pedido={pedido} />
         {pedidoAtualizando === pedido.id && (
@@ -198,7 +196,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
       {/* Grid de 5 colunas */}
       <div className="grid min-h-[70vh] grid-cols-1 gap-5 lg:grid-cols-5">
         {Object.entries(STATUS_CONFIG)
-          .sort(([,a], [,b]) => a.ordem - b.ordem)
+          .sort(([, a], [, b]) => a.ordem - b.ordem)
           .map(([status, config]) => (
             <div
               key={status}
@@ -222,7 +220,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
                   {pedidosAgrupados[status]?.length || 0}
                 </span>
               </div>
-              
+
               {/* Lista de pedidos */}
               <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
                 {pedidosAgrupados[status]?.length > 0 ? (

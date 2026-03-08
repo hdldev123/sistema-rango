@@ -32,7 +32,6 @@ function RotasDeEntrega() {
       setTotalItens(resposta.totalItensAcumulados);
     } catch (err) {
       setErro('Não foi possível carregar o lote de entrega.');
-      console.error('Erro ao carregar lote:', err);
     } finally {
       setCarregando(false);
     }
@@ -165,11 +164,10 @@ function RotasDeEntrega() {
                   </div>
                 </div>
 
-                <span className={`inline-flex items-center rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider ${
-                  loteDisponivel
+                <span className={`inline-flex items-center rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider ${loteDisponivel
                     ? 'bg-sucesso/10 text-sucesso'
                     : 'bg-aviso/10 text-aviso'
-                }`}>
+                  }`}>
                   {loteDisponivel ? '✅ Lote pronto' : '⏳ Acumulando...'}
                 </span>
               </div>
@@ -238,11 +236,10 @@ function RotasDeEntrega() {
                         <div className="absolute -inset-1 animate-pulse rounded-2xl bg-sucesso/20 blur-md" />
                       )}
                       <button
-                        className={`relative inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-base font-bold transition-all duration-300 ${
-                          loteDisponivel
+                        className={`relative inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-base font-bold transition-all duration-300 ${loteDisponivel
                             ? 'bg-sucesso text-white shadow-lg shadow-sucesso/30 hover:-translate-y-1 hover:shadow-xl hover:shadow-sucesso/40 active:translate-y-0'
                             : 'cursor-not-allowed bg-grafite-200 text-grafite-400'
-                        }`}
+                          }`}
                         onClick={handleLiberarLote}
                         disabled={!loteDisponivel || loteIniciando}
                         title={

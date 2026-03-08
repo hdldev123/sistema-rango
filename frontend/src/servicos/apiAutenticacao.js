@@ -24,6 +24,5 @@ export const apiLogin = async (email, senha) => {
  * @returns {Promise<void>}
  */
 export const apiLogout = () => {
-  console.log('Logout realizado, token removido.');
   return Promise.resolve();
 };
