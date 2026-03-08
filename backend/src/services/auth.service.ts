@@ -6,6 +6,30 @@ import { LoginDto, LoginResponseDto } from '../dtos/auth.dto';
 
 const BCRYPT_ROUNDS = 12;
 
+// ─── Validação do JWT_KEY na inicialização ────────────────────────────────────
+// Falha imediatamente (fail-fast) se a chave for fraca ou não configurada.
+// Isso impede que o servidor rode com uma chave insegura sem aviso.
+(function validarJwtKey() {
+  const key = process.env.JWT_KEY ?? '';
+
+  if (!key) {
+    throw new Error('[FATAL] JWT_KEY não definida no .env. O servidor não pode iniciar.');
+  }
+  if (key.startsWith('eyJ')) {
+    throw new Error(
+      '[FATAL] JWT_KEY parece ser um token JWT, não uma chave secreta. ' +
+      'Gere um segredo seguro com: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"',
+    );
+  }
+  if (key.length < 32) {
+    throw new Error(
+      `[FATAL] JWT_KEY muito curta (${key.length} caracteres). ` +
+      'Use uma chave de pelo menos 32 caracteres aleatórios.',
+    );
+  }
+})();
+
+
 /**
  * Realiza login e retorna JWT + dados do usuário.
  * Equivale a AuthService.LoginAsync() do C#.
