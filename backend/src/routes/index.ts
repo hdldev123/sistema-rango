@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authenticate, authorize } from '../middlewares/auth.middleware';
 import { validate } from '../middlewares/validate.middleware';
 
@@ -22,10 +23,26 @@ import * as whatsappController from '../controllers/whatsapp.controller';
 
 const router = Router();
 
+// ─── Rate Limiter — Login ────────────────────────────────────────────
+// Máximo de 10 tentativas por IP a cada 15 minutos.
+// Protege contra brute-force e credential stuffing.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // janela de 15 minutos
+  max: 10,                   // máximo de 10 requisições por IP dentro da janela
+  standardHeaders: 'draft-7', // envia os headers RateLimit-* (RFC 6585)
+  legacyHeaders: false,       // desativa os headers X-RateLimit-* antigos
+  skipSuccessfulRequests: false, // conta também as tentativas bem-sucedidas
+  message: {
+    sucesso: false,
+    mensagem: 'Muitas tentativas de login. Aguarde 15 minutos e tente novamente.',
+    erros: ['Limite de tentativas de login excedido.'],
+  },
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // AUTH — Público
 // ═══════════════════════════════════════════════════════════════════════
-router.post('/api/auth/login', validate(LoginSchema), authController.login);
+router.post('/api/auth/login', loginLimiter, validate(LoginSchema), authController.login);
 
 // ═══════════════════════════════════════════════════════════════════════
 // CLIENTES — Admin + Atendente
