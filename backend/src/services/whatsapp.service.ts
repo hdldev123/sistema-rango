@@ -247,39 +247,48 @@ export function ehMensagemValida(payload: WhatsAppPayload): boolean {
 }
 
 /**
- * Busca um cliente no Supabase comparando o telefone normalizado.
- * Retorna o registro do cliente ou `null` se não encontrado.
+ * Busca um cliente no Supabase comparando o telefone normalizado ou whatsapp_lid.
+ *
+ * Variantes de telefone cobertas (mesma lógica do código anterior, agora no banco):
+ *   - telBanco === telefoneLimpo          → número idêntico
+ *   - telBanco === `55${telefoneLimpo}`   → banco tem DDI, JID não tem
+ *   - telefoneLimpo === `55${telBanco}`   → JID tem DDI, banco não tem
+ *
+ * A query `.or()` + `.limit(1).maybeSingle()` substitui o full table scan anterior,
+ * reduzindo o trabalho de O(N clientes) em JS para uma busca indexada no Postgres.
  */
 async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<any | null> {
-    const { data: clientes, error } = await supabase
-        .from('clientes')
-        .select('*');
+    // Monta os filtros de telefone cobrindo as três variantes de normalização
+    const telComDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo : `55${telefoneLimpo}`;
+    const telSemDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo.slice(2) : telefoneLimpo;
 
-    if (error || !clientes) {
-        console.error('[WhatsApp] Erro ao buscar clientes:', error?.message);
+    // Filtros: telefone exato | com DDI | sem DDI | lid (fallback)
+    const filtros = [
+        `telefone.eq.${telefoneLimpo}`,
+        `telefone.eq.${telComDdi}`,
+        `telefone.eq.${telSemDdi}`,
+        ...(whatsappLid ? [`whatsapp_lid.eq.${whatsappLid}`] : []),
+    ].join(',');
+
+    const { data, error } = await supabase
+        .from('clientes')
+        .select('*')
+        .or(filtros)
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        console.error('[WhatsApp] Erro ao buscar cliente por telefone:', error.message);
         return null;
     }
 
-    // Prioridade 1: buscar por telefone normalizado
-    const porTelefone = clientes.find((c: any) => {
-        const telBanco = (c.telefone || '').replace(/\D/g, '');
-        return telBanco === telefoneLimpo
-            || telBanco === `55${telefoneLimpo}`
-            || `55${telBanco}` === telefoneLimpo;
-    });
-    if (porTelefone) return porTelefone;
-
-    // Prioridade 2: buscar por whatsapp_lid (quando @lid não pôde ser resolvido para telefone real)
-    if (whatsappLid) {
-        const porLid = clientes.find((c: any) => c.whatsapp_lid === whatsappLid);
-        if (porLid) {
-            console.log(`[WhatsApp] Cliente encontrado via whatsapp_lid: ${whatsappLid}`);
-            return porLid;
-        }
+    if (data && whatsappLid && data.whatsapp_lid === whatsappLid) {
+        console.log(`[WhatsApp] Cliente encontrado via whatsapp_lid: ${whatsappLid}`);
     }
 
-    return null;
+    return data;
 }
+
 
 /**
  * Busca o pedido ativo mais recente de um cliente.
