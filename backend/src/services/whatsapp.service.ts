@@ -239,7 +239,7 @@ export function ehMensagemValida(payload: WhatsAppPayload): boolean {
  * Busca um cliente no Supabase comparando o telefone normalizado.
  * Retorna o registro do cliente ou `null` se não encontrado.
  */
-async function buscarClientePorTelefone(telefoneLimpo: string): Promise<any | null> {
+async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<any | null> {
     const { data: clientes, error } = await supabase
         .from('clientes')
         .select('*');
@@ -249,12 +249,25 @@ async function buscarClientePorTelefone(telefoneLimpo: string): Promise<any | nu
         return null;
     }
 
-    return clientes.find((c: any) => {
+    // Prioridade 1: buscar por telefone normalizado
+    const porTelefone = clientes.find((c: any) => {
         const telBanco = (c.telefone || '').replace(/\D/g, '');
         return telBanco === telefoneLimpo
             || telBanco === `55${telefoneLimpo}`
             || `55${telBanco}` === telefoneLimpo;
-    }) ?? null;
+    });
+    if (porTelefone) return porTelefone;
+
+    // Prioridade 2: buscar por whatsapp_lid (quando @lid não pôde ser resolvido para telefone real)
+    if (whatsappLid) {
+        const porLid = clientes.find((c: any) => c.whatsapp_lid === whatsappLid);
+        if (porLid) {
+            console.log(`[WhatsApp] Cliente encontrado via whatsapp_lid: ${whatsappLid}`);
+            return porLid;
+        }
+    }
+
+    return null;
 }
 
 /**
@@ -338,21 +351,36 @@ export async function notificarClienteStatusPedido(pedido: PedidoDto): Promise<v
         return;
     }
 
-    // Buscar whatsapp_jid diretamente do cliente no banco (mais confiável que derivar do telefone)
+    if (!pedido.clienteId) {
+        console.warn(`[WhatsApp] Pedido #${pedido.id}: clienteId ausente, notificação ignorada.`);
+        return;
+    }
+
+    // Buscar JIDs persistidos e telefone diretamente do cliente no banco.
+    // Prioridade: whatsapp_jid (@s.whatsapp.net real) → whatsapp_lid (@lid) → construir do telefone.
     const { data: clienteDb } = await supabase
         .from('clientes')
-        .select('whatsapp_jid, telefone')
+        .select('whatsapp_jid, whatsapp_lid, telefone')
         .eq('id', pedido.clienteId)
         .maybeSingle();
 
     let jid: string;
     if (clienteDb?.whatsapp_jid) {
+        // Caso ideal: JID real do @s.whatsapp.net persistido
         jid = clienteDb.whatsapp_jid;
+        console.log(`[WhatsApp] Usando whatsapp_jid para pedido #${pedido.id}: ${jid}`);
+    } else if (clienteDb?.whatsapp_lid) {
+        // Segundo caso: temos o @lid — enviarMensagem tentará resolver para @s.whatsapp.net
+        // via resolverJidParaEnvio. Se não resolver, envia direto ao @lid (sessão Signal válida).
+        jid = clienteDb.whatsapp_lid;
+        console.log(`[WhatsApp] Usando whatsapp_lid para pedido #${pedido.id}: ${jid}`);
     } else {
-        // Fallback: construir a partir do telefone
+        // Último recurso: construir a partir do telefone.
+        // ATENÇÃO: só funciona se o campo telefone contém o número real (não dígitos de @lid).
         const tel = (clienteDb?.telefone ?? pedido.clienteTelefone).replace(/\D/g, '');
         const withCountry = tel.length <= 11 ? `55${tel}` : tel;
         jid = `${withCountry}@s.whatsapp.net`;
+        console.log(`[WhatsApp] Fallback telefone para pedido #${pedido.id}: ${jid}`);
     }
 
     const statusLabel = labelStatusParaCliente(pedido.statusEnum);
@@ -664,9 +692,10 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         }
 
         // ── 3. Verificar se há onboarding em andamento
+        //    IMPORTANTE: AGUARDANDO_PEDIDO não é onboarding — deve cair no fluxo de pedido (step 7).
         const estadoAtual = await obterEstado(telefoneLimpo);
 
-        if (estadoAtual) {
+        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.AGUARDANDO_PEDIDO) {
             // Cliente está no meio do cadastro — processar onboarding
             const clienteOnboarding = await processarOnboarding(remoteJid, texto, nomeContato, telefoneLimpo);
 
@@ -683,8 +712,8 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
             return;
         }
 
-        // ── 4. Buscar cliente cadastrado
-        let cliente = await buscarClientePorTelefone(telefoneLimpo);
+        // ── 4. Buscar cliente cadastrado (por telefone ou por whatsapp_lid como fallback)
+        let cliente = await buscarClientePorTelefone(telefoneLimpo, whatsappLid);
 
         // ── 5. Cliente não existe → iniciar onboarding
         if (!cliente) {
