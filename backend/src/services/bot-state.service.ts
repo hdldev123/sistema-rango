@@ -9,6 +9,7 @@
  * - INICIAL: Cliente não cadastrado; bot pedirá o nome.
  * - AGUARDANDO_NOME: Bot aguarda o nome completo do cliente.
  * - AGUARDANDO_ENDERECO: Bot aguarda o endereço de entrega.
+ * - AGUARDANDO_PEDIDO: Cliente cadastrado; bot aguarda o texto do pedido.
  *
  * Sessões com mais de 30 minutos de inatividade são tratadas como expiradas.
  */
@@ -22,6 +23,7 @@ export enum EtapaConversa {
     INICIAL = 'INICIAL',
     AGUARDANDO_NOME = 'AGUARDANDO_NOME',
     AGUARDANDO_ENDERECO = 'AGUARDANDO_ENDERECO',
+    AGUARDANDO_PEDIDO = 'AGUARDANDO_PEDIDO',
 }
 
 /** Dados coletados durante o onboarding */

@@ -22,6 +22,7 @@ const ADMIN_JID = '5532999269379@s.whatsapp.net';
  * Chamado sempre que uma mensagem válida é recebida.
  */
 async function salvarJidCliente(
+    clienteId: number | null,
     telefoneLimpo: string,
     whatsappJid: string | null,
     whatsappLid: string | null,
@@ -31,13 +32,22 @@ async function salvarJidCliente(
     if (whatsappLid) updates.whatsapp_lid = whatsappLid;
     if (Object.keys(updates).length === 0) return;
 
+    // Preferir update por ID (mais confiável)
+    if (clienteId) {
+        const { error } = await supabase
+            .from('clientes')
+            .update(updates)
+            .eq('id', clienteId);
+        if (!error) return;
+    }
+
+    // Fallback: update por telefone
     const { error } = await supabase
         .from('clientes')
         .update(updates)
         .eq('telefone', telefoneLimpo);
 
     if (error) {
-        // Tenta com 55+telefone (formato alternativo no banco)
         await supabase
             .from('clientes')
             .update(updates)
@@ -328,10 +338,22 @@ export async function notificarClienteStatusPedido(pedido: PedidoDto): Promise<v
         return;
     }
 
-    // Usa o cache de JID real (preenchido quando o cliente enviou mensagem anterior).
-    // Se o cliente nunca enviou mensagem, cai no fallback @s.whatsapp.net.
-    const telefoneLimpo = limparTelefone(pedido.clienteTelefone);
-    const jid = await resolverJid(telefoneLimpo);
+    // Buscar whatsapp_jid diretamente do cliente no banco (mais confiável que derivar do telefone)
+    const { data: clienteDb } = await supabase
+        .from('clientes')
+        .select('whatsapp_jid, telefone')
+        .eq('id', pedido.clienteId)
+        .maybeSingle();
+
+    let jid: string;
+    if (clienteDb?.whatsapp_jid) {
+        jid = clienteDb.whatsapp_jid;
+    } else {
+        // Fallback: construir a partir do telefone
+        const tel = (clienteDb?.telefone ?? pedido.clienteTelefone).replace(/\D/g, '');
+        const withCountry = tel.length <= 11 ? `55${tel}` : tel;
+        jid = `${withCountry}@s.whatsapp.net`;
+    }
 
     const statusLabel = labelStatusParaCliente(pedido.statusEnum);
     const complemento = obterMensagemComplementarStatus(pedido.statusEnum);
@@ -401,6 +423,69 @@ async function notificarAdministrador(
     }
 }
 
+// ─── Criação de Pedido via WhatsApp ──────────────────────────────────
+
+/**
+ * Cria um pedido placeholder para o cliente.
+ *
+ * Como o bot ainda não interpreta as quantidades, cria o pedido
+ * com o primeiro produto ativo (quantidade 1) e salva o texto
+ * original do cliente nas observações para tratamento manual.
+ */
+async function criarPedidoPlaceholder(
+    cliente: { id: number; nome: string; endereco?: string | null },
+    textoPedido: string,
+    remoteJid: string,
+): Promise<void> {
+    // Buscar primeiro produto ativo para usar como item placeholder
+    const { data: produto } = await supabase
+        .from('produtos')
+        .select('id, nome')
+        .eq('ativo', true)
+        .order('id', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (!produto) {
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, *${cliente.nome}*! Estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+        );
+        console.warn('[WhatsApp] Nenhum produto ativo encontrado para criar pedido.');
+        return;
+    }
+
+    const pedidoInput = {
+        clienteId: cliente.id,
+        observacoes: `[Via WhatsApp] ${textoPedido}`,
+        itens: [{ produtoId: produto.id, quantidade: 1 }],
+    };
+
+    const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
+
+    if (erros || !pedido) {
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, *${cliente.nome}*, tivemos um problema ao registrar seu pedido. 😔\nPor favor, tente novamente.`,
+        );
+        console.error('[WhatsApp] Erro ao criar pedido:', erros);
+        return;
+    }
+
+    await enviarMensagem(
+        remoteJid,
+        `✅ Pedido registrado com sucesso!\n\n` +
+        `📋 *Pedido #${pedido.id}*\n` +
+        `📝 *Seu pedido:* ${textoPedido}\n\n` +
+        `Vamos preparar tudo com carinho! Você receberá atualizações por aqui. 😊`,
+    );
+
+    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (ID: ${cliente.id}).`);
+
+    // Notificar administrador
+    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, textoPedido);
+}
+
 // ─── Fluxo de Onboarding (novo cliente) ──────────────────────────────
 
 /**
@@ -453,7 +538,7 @@ async function processarOnboarding(
                 return null;
             }
 
-            definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_ENDERECO, { nome });
+            await definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_ENDERECO, { nome });
 
             await enviarMensagem(
                 remoteJid,
@@ -561,8 +646,8 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         // ── 2a. Persistir JIDs no banco (para sobreviver a reinicializações)
         const whatsappJid = phoneJidResolvido.endsWith('@s.whatsapp.net') ? phoneJidResolvido : null;
         const whatsappLid = remoteJid.endsWith('@lid') ? remoteJid : null;
-        // Fire-and-forget — não bloqueia o fluxo
-        salvarJidCliente(telefoneLimpo, whatsappJid, whatsappLid).catch(() => {});
+        // Nota: clienteId será preenchido depois, quando soubermos quem é o cliente.
+        //       Por enquanto, mark para salvar após buscar o cliente.
 
         // ── 2b. Se o @lid foi resolvido e o cliente tem telefone errado no banco, corrigir
         if (phoneJidResolvido !== phoneJid) {
@@ -610,6 +695,9 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
 
         console.log(`[WhatsApp] Cliente encontrado: ${cliente.nome} (ID: ${cliente.id})`);
 
+        // Persistir JIDs no banco agora que sabemos o clienteId
+        salvarJidCliente(cliente.id, telefoneLimpo, whatsappJid, whatsappLid).catch(() => {});
+
         // Logar mensagem inbound
         logarMensagem(cliente.id, remoteJid, texto, 'INBOUND').catch(() => {});
 
@@ -630,61 +718,25 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
             return;
         }
 
-        // ── 7. Criar pedido (placeholder — MVP)
-        const { data: produtoPlaceholder, error: produtoError } = await supabase
-            .from('produtos')
-            .select('id, preco')
-            .eq('ativo', true)
-            .order('id', { ascending: true })
-            .limit(1)
-            .single();
+        // ── 7. Sem pedido ativo → verificar se está aguardando o texto do pedido
+        const estadoPedido = await obterEstado(telefoneLimpo);
 
-        if (produtoError || !produtoPlaceholder) {
-            console.error('[WhatsApp] Nenhum produto ativo encontrado para criar pedido placeholder.');
-            await enviarMensagem(
-                remoteJid,
-                `Desculpe, estamos com um problema técnico no momento. Tente novamente mais tarde. 🙏`,
-            );
+        if (estadoPedido?.etapa === EtapaConversa.AGUARDANDO_PEDIDO) {
+            // Cliente já foi saudado, esta mensagem é o pedido
+            await limparEstado(telefoneLimpo);
+            await criarPedidoPlaceholder(cliente, texto, remoteJid);
             return;
         }
 
-        const pedidoInput = {
-            clienteId: cliente.id,
-            observacoes: `[Via WhatsApp] ${texto}`,
-            itens: [
-                {
-                    produtoId: produtoPlaceholder.id,
-                    quantidade: 1,
-                },
-            ],
-        };
-
-        const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
-
-        if (erros && erros.length > 0) {
-            console.error(`[WhatsApp] Erro ao criar pedido para ${cliente.nome}:`, erros);
-            await enviarMensagem(
-                remoteJid,
-                `Desculpe, não conseguimos registrar seu pedido agora. Tente novamente em instantes. 🙏`,
-            );
-            return;
-        }
-
-        console.log(
-            `[WhatsApp] ✅ Pedido #${pedido?.id} criado com sucesso para ${cliente.nome} ` +
-            `(valor: R$ ${pedido?.valorTotal.toFixed(2)})`,
-        );
-
-        // Confirmar recebimento para o cliente
+        // ── 8. Cliente retornando sem pedido ativo → saudar e pedir o pedido
+        await definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_PEDIDO);
         await enviarMensagem(
             remoteJid,
-            `✅ Pedido recebido, *${cliente.nome}*!\n\n` +
-            `Seu pedido foi registrado e será preparado em breve.\n` +
-            `Obrigado por escolher a *X Salgados*! 🧡`,
+            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!\n\n` +
+            `O que deseja pedir hoje? 😊\n` +
+            `(ex: "50 coxinhas e 30 risoles")`,
         );
-
-        // ── 7. Notificar o administrador
-        await notificarAdministrador(cliente.nome, cliente.endereco, texto);
+        console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Aguardando texto do pedido.`);
 
     } catch (error: any) {
         console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error.message);
