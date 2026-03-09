@@ -13,7 +13,7 @@ export function validate(schema: ZodSchema, source: 'body' | 'query' | 'params' 
     try {
       const parsed = schema.parse(req[source]);
       // Sobrescreve com os dados validados e transformados (coerções, defaults)
-      (req as any)[source] = parsed;
+      Object.assign(req, { [source]: parsed });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
