@@ -1,30 +1,31 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { FiPlus, FiEdit, FiTrash2 } from 'react-icons/fi';
 import { buscarProdutos, deletarProduto } from '../../servicos/apiProdutos';
-import Tabela from '../../componentes/Tabela/Tabela';
+import Tabela, { ColunaTabela } from '../../componentes/Tabela/Tabela';
 import Spinner from '../../componentes/Spinner/Spinner';
 import Modal from '../../componentes/Modal/Modal';
 import FormularioProduto from './FormularioProdutos';
+import { Produto } from '../../types';
 
 function ListagemProdutos() {
-  const [produtos, setProdutos] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState(null);
-  
-  const [modalAberto, setModalAberto] = useState(false);
-  const [produtoEditando, setProdutoEditando] = useState(null);
+  const [produtos, setProdutos] = useState<Produto[]>([]);
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
 
-  const [modalExcluirAberto, setModalExcluirAberto] = useState(false);
-  const [produtoParaExcluir, setProdutoParaExcluir] = useState(null);
+  const [modalAberto, setModalAberto] = useState<boolean>(false);
+  const [produtoEditando, setProdutoEditando] = useState<Produto | null>(null);
+
+  const [modalExcluirAberto, setModalExcluirAberto] = useState<boolean>(false);
+  const [produtoParaExcluir, setProdutoParaExcluir] = useState<Produto | null>(null);
 
   const carregarProdutos = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     try {
       const dados = await buscarProdutos();
-      setProdutos(dados.dados);
-    } catch (err) {
-      setErro(err.message);
+      setProdutos(dados.dados || []);
+    } catch (err: any) {
+      setErro(err.message || String(err));
     } finally {
       setCarregando(false);
     }
@@ -34,7 +35,7 @@ function ListagemProdutos() {
     carregarProdutos();
   }, [carregarProdutos]);
 
-  const abrirModalFormulario = (produto) => {
+  const abrirModalFormulario = (produto: Produto | null) => {
     setProdutoEditando(produto);
     setModalAberto(true);
   };
@@ -49,56 +50,59 @@ function ListagemProdutos() {
     carregarProdutos();
   };
 
-  const abrirModalExcluir = (produto) => {
+  const abrirModalExcluir = (produto: Produto) => {
     setProdutoParaExcluir(produto);
     setModalExcluirAberto(true);
   }
 
   const fecharModalExcluir = () => {
-      setProdutoParaExcluir(null);
-      setModalExcluirAberto(false);
+    setProdutoParaExcluir(null);
+    setModalExcluirAberto(false);
   }
 
   const handleConfirmarExclusao = async () => {
-      if(!produtoParaExcluir) return;
-      try {
-        await deletarProduto(produtoParaExcluir.id);
-        fecharModalExcluir();
-        carregarProdutos();
-      } catch (error) {
-          setErro("Falha ao excluir o produto.");
-      }
+    if (!produtoParaExcluir) return;
+    try {
+      await deletarProduto(produtoParaExcluir.id);
+      fecharModalExcluir();
+      carregarProdutos();
+    } catch (error) {
+      setErro("Falha ao excluir o produto.");
+    }
   }
 
-  const colunas = [
+  const colunas: ColunaTabela<Produto>[] = [
     { cabecalho: 'Nome', chave: 'nome' },
     { cabecalho: 'Categoria', chave: 'categoria' },
     { cabecalho: 'Preço', render: (produto) => `R$ ${produto.preco.toFixed(2)}` },
-    { cabecalho: 'Status', render: (produto) => (
-      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-        produto.ativo
-          ? 'bg-sucesso/10 text-sucesso'
-          : 'bg-grafite-100 text-grafite-400'
-      }`}>
-        {produto.ativo ? 'Ativo' : 'Inativo'}
-      </span>
-    )},
-    { cabecalho: 'Ações', render: (produto) => (
-      <div className="flex items-center gap-2">
-        <button
-          className="flex items-center justify-center rounded-lg p-2 text-primary-500 transition-colors hover:bg-primary-50"
-          onClick={() => abrirModalFormulario(produto)}
-        >
-          <FiEdit />
-        </button>
-        <button
-          className="flex items-center justify-center rounded-lg p-2 text-erro transition-colors hover:bg-erro/10"
-          onClick={() => abrirModalExcluir(produto)}
-        >
-          <FiTrash2 />
-        </button>
-      </div>
-    )},
+    {
+      cabecalho: 'Status', render: (produto) => (
+        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${produto.ativo
+            ? 'bg-sucesso/10 text-sucesso'
+            : 'bg-grafite-100 text-grafite-400'
+          }`}>
+          {produto.ativo ? 'Ativo' : 'Inativo'}
+        </span>
+      )
+    },
+    {
+      cabecalho: 'Ações', render: (produto) => (
+        <div className="flex items-center gap-2">
+          <button
+            className="flex items-center justify-center rounded-lg p-2 text-primary-500 transition-colors hover:bg-primary-50"
+            onClick={() => abrirModalFormulario(produto)}
+          >
+            <FiEdit />
+          </button>
+          <button
+            className="flex items-center justify-center rounded-lg p-2 text-erro transition-colors hover:bg-erro/10"
+            onClick={() => abrirModalExcluir(produto)}
+          >
+            <FiTrash2 />
+          </button>
+        </div>
+      )
+    },
   ];
 
   return (
@@ -120,16 +124,16 @@ function ListagemProdutos() {
           {erro}
         </div>
       )}
-      {!carregando && !erro && <Tabela colunas={colunas} dados={produtos} />}
+      {!carregando && !erro && <Tabela<Produto> colunas={colunas} dados={produtos} />}
 
-      <Modal 
+      <Modal
         estaAberto={modalAberto}
         aoFechar={fecharModalFormulario}
         titulo={produtoEditando ? "Editar Produto" : "Adicionar Produto"}
       >
         <FormularioProduto
-            produto={produtoEditando}
-            aoSalvar={handleSucessoFormulario}
+          produto={produtoEditando}
+          aoSalvar={handleSucessoFormulario}
         />
       </Modal>
 
@@ -139,23 +143,23 @@ function ListagemProdutos() {
         titulo="Confirmar Exclusão"
       >
         <div>
-            <p className="text-sm text-grafite-600">
-              Tem certeza que deseja excluir o produto <strong className="text-grafite-800">{produtoParaExcluir?.nome}</strong>?
-            </p>
-            <div className="mt-6 flex justify-end gap-3 border-t border-grafite-200 pt-4">
-                <button
-                  className="rounded-xl border border-grafite-300 px-5 py-2 text-sm font-medium text-grafite-600 transition-colors hover:bg-grafite-50"
-                  onClick={fecharModalExcluir}
-                >
-                  Cancelar
-                </button>
-                <button
-                  className="rounded-xl bg-erro px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-red-700"
-                  onClick={handleConfirmarExclusao}
-                >
-                  Confirmar
-                </button>
-            </div>
+          <p className="text-sm text-grafite-600">
+            Tem certeza que deseja excluir o produto <strong className="text-grafite-800">{produtoParaExcluir?.nome}</strong>?
+          </p>
+          <div className="mt-6 flex justify-end gap-3 border-t border-grafite-200 pt-4">
+            <button
+              className="rounded-xl border border-grafite-300 px-5 py-2 text-sm font-medium text-grafite-600 transition-colors hover:bg-grafite-50"
+              onClick={fecharModalExcluir}
+            >
+              Cancelar
+            </button>
+            <button
+              className="rounded-xl bg-erro px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-red-700"
+              onClick={handleConfirmarExclusao}
+            >
+              Confirmar
+            </button>
+          </div>
         </div>
       </Modal>
 

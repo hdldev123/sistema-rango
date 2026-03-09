@@ -1,17 +1,21 @@
 /**
  * Definições de tipos e interfaces para o frontend X Salgados.
- *
- * Este arquivo serve como referência de tipos para JSDoc.
  * Documenta os contratos entre frontend e backend.
  */
 
 // ─── ENUMS / CONSTANTES ────────────────────────────────────────────────────────
 
-/**
- * Status de pedido usados no frontend (UPPER_SNAKE_CASE).
- * @readonly
- * @enum {string}
- */
+export enum StatusPedido {
+  Pendente = 1,
+  EmProducao = 2,
+  Pronto = 3,
+  EmEntrega = 4,
+  Entregue = 5,
+  Cancelado = 6,
+}
+
+// Map the old strings to numeric values just in case some legacy code relies on it, or define string literal types of the status labels if needed.
+// Based on typical enum vs string union mapping:
 export const STATUS_PEDIDO = {
   PENDENTE: 'PENDENTE',
   EM_PREPARO: 'EM_PREPARO',
@@ -21,124 +25,120 @@ export const STATUS_PEDIDO = {
   CANCELADO: 'CANCELADO',
 };
 
-/**
- * Roles de usuário usados no frontend (UPPER_SNAKE_CASE).
- * @readonly
- * @enum {string}
- */
 export const ROLES_USUARIO = {
   ADMINISTRADOR: 'ADMINISTRADOR',
   ATENDENTE: 'ATENDENTE',
   ENTREGADOR: 'ENTREGADOR',
 };
 
+export type RoleUsuario = 'ADMINISTRADOR' | 'ATENDENTE' | 'ENTREGADOR';
+
 // ─── INTERFACES / TYPEDEF ──────────────────────────────────────────────────────
 
-/**
- * @typedef {Object} Usuario
- * @property {number} id
- * @property {string} nome
- * @property {string} email
- * @property {string} role - ADMINISTRADOR | ATENDENTE | ENTREGADOR
- * @property {boolean} [ativo]
- * @property {string} [dataCriacao]
- */
+export interface Usuario {
+  id: number;
+  nome: string;
+  email: string;
+  role: RoleUsuario;
+  ativo?: boolean;
+  dataCriacao?: string;
+}
 
-/**
- * @typedef {Object} LoginResponse
- * @property {string} token - JWT Bearer token
- * @property {Usuario} usuario - Dados do usuário autenticado
- * @property {string} expiracao - Data de expiração do token (ISO string)
- */
+export interface LoginResponse {
+  token: string;
+  usuario: Usuario;
+  expiracao: string;
+}
 
-/**
- * @typedef {Object} Cliente
- * @property {number} id
- * @property {string} nome
- * @property {string} telefone
- * @property {string} [email]
- * @property {string} [endereco]
- * @property {string} [cidade]
- * @property {string} [cep]
- * @property {string} [dataCriacao]
- * @property {number} [totalPedidos]
- */
+export interface Cliente {
+  id: number;
+  nome: string;
+  telefone: string;
+  email?: string;
+  endereco?: string;
+  cidade?: string;
+  cep?: string;
+  dataCriacao?: string;
+  totalPedidos?: number;
+  whatsapp_jid?: string;
+  whatsapp_lid?: string;
+}
 
-/**
- * @typedef {Object} Produto
- * @property {number} id
- * @property {string} nome
- * @property {string} [categoria]
- * @property {string} [descricao]
- * @property {number} preco
- * @property {boolean} [ativo]
- * @property {string} [dataCriacao]
- */
+export interface Produto {
+  id: number;
+  nome: string;
+  categoria?: string;
+  descricao?: string;
+  preco: number;
+  ativo?: boolean;
+  dataCriacao?: string;
+}
 
-/**
- * @typedef {Object} ItemPedido
- * @property {number} id
- * @property {number} produtoId
- * @property {string} [produtoNome]
- * @property {number} quantidade
- * @property {number} precoUnitario
- * @property {number} [subtotal]
- */
+export interface ItemPedido {
+  id: number;
+  produtoId: number;
+  produtoNome?: string;
+  quantidade: number;
+  precoUnitario: number;
+  subtotal?: number;
+}
 
-/**
- * @typedef {Object} Pedido
- * @property {number} id
- * @property {number} clienteId
- * @property {{ nome: string }} [cliente] - Objeto simplificado com nome do cliente
- * @property {string} dataPedido - Data de criação (ISO string)
- * @property {string} [dataEntrega] - Data de entrega (ISO string ou null)
- * @property {number} total - Valor total do pedido
- * @property {string} status - PENDENTE | EM_PREPARO | PRONTO | A_CAMINHO | ENTREGUE | CANCELADO
- * @property {string} [observacoes]
- * @property {ItemPedido[]} [itens]
- */
+export interface Pedido {
+  id: number;
+  clienteId: number;
+  cliente?: Partial<Cliente>;
+  dataPedido: string;
+  dataEntrega?: string;
+  total: number;
+  status: string | number; // Backwards compatible with legacy frontend
+  observacoes?: string;
+  itens?: ItemPedido[];
+}
 
-/**
- * @typedef {Object} ResultadoPaginado
- * @property {Array} dados - Array de itens da página
- * @property {number} total - Total de registros
- * @property {number} [totalItens] - Alias para total (compatibilidade)
- * @property {number} [pagina] - Página atual
- * @property {number} [tamanhoPagina] - Itens por página
- * @property {number} [totalPaginas] - Total de páginas
- */
+export interface ResultadoPaginado<T> {
+  dados: T[];
+  total: number;
+  totalItens?: number;
+  pagina?: number;
+  tamanhoPagina?: number;
+  totalPaginas?: number;
+}
 
-/**
- * @typedef {Object} DashboardKPIs
- * @property {number} pedidosHoje
- * @property {number} pedidosSemana
- * @property {number} pedidosMes
- * @property {number} receitaHoje
- * @property {number} receitaSemana
- * @property {number} receitaMes
- * @property {number} totalClientes
- * @property {number} totalProdutosAtivos
- */
+export interface DashboardKPIs {
+  pedidosHoje: number;
+  pedidosSemana: number;
+  pedidosMes: number;
+  receitaHoje: number;
+  receitaSemana: number;
+  receitaMes: number;
+  totalClientes: number;
+  totalProdutosAtivos: number;
+}
 
-/**
- * @typedef {Object} PedidosPorMes
- * @property {number} ano
- * @property {number} mes
- * @property {number} quantidade
- * @property {number} receita
- */
+export interface PedidosPorMes {
+  ano: number;
+  mes: number;
+  quantidade: number;
+  receita: number;
+}
 
-/**
- * @typedef {Object} DistribuicaoStatus
- * @property {string} status
- * @property {number} quantidade
- * @property {number} percentual
- */
+export interface DistribuicaoStatus {
+  status: string;
+  quantidade: number;
+  percentual: number;
+}
 
-/**
- * @typedef {Object} ApiError
- * @property {boolean} sucesso - Sempre false
- * @property {string} mensagem - Descrição do erro
- * @property {string[]} erros - Lista de detalhes do erro
- * @property {number} status - HTTP status code
- */
+export interface ApiError {
+  sucesso: false;
+  mensagem: string;
+  erros: string[];
+  status: number;
+}
+
+// A generic wrapper for common API responses
+export interface ApiResponse<T> {
+  sucesso: boolean;
+  dados?: T;
+  erro?: string;
+  mensagem?: string;
+}

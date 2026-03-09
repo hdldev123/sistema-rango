@@ -1,19 +1,30 @@
-import React, { createContext, useContext, useReducer, useCallback } from 'react';
-import { buscarPedidos, atualizarStatusPedido, buscarPedidosPorStatus } from '../servicos/apiPedidos';
+import React, { createContext, useContext, useReducer, useCallback, ReactNode } from 'react';
+import { buscarPedidos, atualizarStatusPedido, buscarPedidosPorStatus, BuscarPedidosParams } from '../servicos/apiPedidos';
+import { Pedido } from '../types';
 
-// Tipos de ações
-const TIPOS_ACAO = {
-  CARREGAR_PEDIDOS_INICIO: 'CARREGAR_PEDIDOS_INICIO',
-  CARREGAR_PEDIDOS_SUCESSO: 'CARREGAR_PEDIDOS_SUCESSO',
-  CARREGAR_PEDIDOS_ERRO: 'CARREGAR_PEDIDOS_ERRO',
-  ATUALIZAR_STATUS_INICIO: 'ATUALIZAR_STATUS_INICIO',
-  ATUALIZAR_STATUS_SUCESSO: 'ATUALIZAR_STATUS_SUCESSO',
-  ATUALIZAR_STATUS_ERRO: 'ATUALIZAR_STATUS_ERRO',
-  LIMPAR_NOTIFICACAO: 'LIMPAR_NOTIFICACAO'
-};
+type Notificacao = {
+  tipo: 'sucesso' | 'erro';
+  mensagem: string;
+} | null;
 
-// Estado inicial
-const estadoInicial = {
+interface PedidosState {
+  pedidos: Pedido[];
+  carregando: boolean;
+  erro: string | null;
+  atualizandoStatus: number | null;
+  notificacao: Notificacao;
+}
+
+type PedidosAction =
+  | { type: 'CARREGAR_PEDIDOS_INICIO' }
+  | { type: 'CARREGAR_PEDIDOS_SUCESSO'; payload: Pedido[] }
+  | { type: 'CARREGAR_PEDIDOS_ERRO'; payload: string }
+  | { type: 'ATUALIZAR_STATUS_INICIO'; payload: number }
+  | { type: 'ATUALIZAR_STATUS_SUCESSO'; payload: { pedidoId: number; novoStatus: string | number } }
+  | { type: 'ATUALIZAR_STATUS_ERRO'; payload: string }
+  | { type: 'LIMPAR_NOTIFICACAO' };
+
+const estadoInicial: PedidosState = {
   pedidos: [],
   carregando: false,
   erro: null,
@@ -21,38 +32,17 @@ const estadoInicial = {
   notificacao: null
 };
 
-// Reducer para gerenciar o estado
-function pedidosReducer(estado, acao) {
+function pedidosReducer(estado: PedidosState, acao: PedidosAction): PedidosState {
   switch (acao.type) {
-    case TIPOS_ACAO.CARREGAR_PEDIDOS_INICIO:
-      return {
-        ...estado,
-        carregando: true,
-        erro: null
-      };
-
-    case TIPOS_ACAO.CARREGAR_PEDIDOS_SUCESSO:
-      return {
-        ...estado,
-        carregando: false,
-        pedidos: acao.payload,
-        erro: null
-      };
-
-    case TIPOS_ACAO.CARREGAR_PEDIDOS_ERRO:
-      return {
-        ...estado,
-        carregando: false,
-        erro: acao.payload
-      };
-
-    case TIPOS_ACAO.ATUALIZAR_STATUS_INICIO:
-      return {
-        ...estado,
-        atualizandoStatus: acao.payload
-      };
-
-    case TIPOS_ACAO.ATUALIZAR_STATUS_SUCESSO:
+    case 'CARREGAR_PEDIDOS_INICIO':
+      return { ...estado, carregando: true, erro: null };
+    case 'CARREGAR_PEDIDOS_SUCESSO':
+      return { ...estado, carregando: false, pedidos: acao.payload, erro: null };
+    case 'CARREGAR_PEDIDOS_ERRO':
+      return { ...estado, carregando: false, erro: acao.payload };
+    case 'ATUALIZAR_STATUS_INICIO':
+      return { ...estado, atualizandoStatus: acao.payload };
+    case 'ATUALIZAR_STATUS_SUCESSO':
       return {
         ...estado,
         atualizandoStatus: null,
@@ -61,108 +51,84 @@ function pedidosReducer(estado, acao) {
             ? { ...pedido, status: acao.payload.novoStatus }
             : pedido
         ),
-        notificacao: {
-          tipo: 'sucesso',
-          mensagem: 'Status do pedido atualizado com sucesso'
-        }
+        notificacao: { tipo: 'sucesso', mensagem: 'Status do pedido atualizado com sucesso' }
       };
-
-    case TIPOS_ACAO.ATUALIZAR_STATUS_ERRO:
+    case 'ATUALIZAR_STATUS_ERRO':
       return {
         ...estado,
         atualizandoStatus: null,
         erro: acao.payload,
-        notificacao: {
-          tipo: 'erro',
-          mensagem: acao.payload
-        }
+        notificacao: { tipo: 'erro', mensagem: acao.payload }
       };
-
-    case TIPOS_ACAO.LIMPAR_NOTIFICACAO:
-      return {
-        ...estado,
-        notificacao: null
-      };
-
+    case 'LIMPAR_NOTIFICACAO':
+      return { ...estado, notificacao: null };
     default:
       return estado;
   }
 }
 
-// Contexto
-const ContextoPedidos = createContext();
+export interface PedidosContextProps extends PedidosState {
+  pedidosPendentes: Pedido[];
+  pedidosEmProducao: Pedido[];
+  pedidosProntos: Pedido[];
+  pedidosEmEntrega: Pedido[];
+  pedidosEntregues: Pedido[];
+  totalPedidos: number;
+  totalValor: number;
+  carregarPedidos: (parametros?: BuscarPedidosParams) => Promise<void>;
+  alterarStatusPedido: (pedidoId: number, novoStatus: string | number) => Promise<void>;
+  buscarPorStatus: (status: string) => Promise<Pedido[]>;
+  limparNotificacao: () => void;
+}
 
-// Provider do contexto
-export function ProviderPedidos({ children }) {
+const ContextoPedidos = createContext<PedidosContextProps | undefined>(undefined);
+
+export function ProviderPedidos({ children }: { children: ReactNode }) {
   const [estado, dispatch] = useReducer(pedidosReducer, estadoInicial);
 
-  // Função para carregar pedidos
-  const carregarPedidos = useCallback(async (parametros = {}) => {
-    dispatch({ type: TIPOS_ACAO.CARREGAR_PEDIDOS_INICIO });
+  const carregarPedidos = useCallback(async (parametros: BuscarPedidosParams = {}) => {
+    dispatch({ type: 'CARREGAR_PEDIDOS_INICIO' });
 
     try {
       const resposta = await buscarPedidos(parametros);
-      dispatch({
-        type: TIPOS_ACAO.CARREGAR_PEDIDOS_SUCESSO,
-        payload: resposta.dados
-      });
-    } catch (erro) {
-      dispatch({
-        type: TIPOS_ACAO.CARREGAR_PEDIDOS_ERRO,
-        payload: erro.message
-      });
+      dispatch({ type: 'CARREGAR_PEDIDOS_SUCESSO', payload: resposta.dados || [] });
+    } catch (erro: any) {
+      dispatch({ type: 'CARREGAR_PEDIDOS_ERRO', payload: erro.message });
     }
   }, []);
 
-  // Função para atualizar status
-  const alterarStatusPedido = useCallback(async (pedidoId, novoStatus) => {
-    dispatch({
-      type: TIPOS_ACAO.ATUALIZAR_STATUS_INICIO,
-      payload: pedidoId
-    });
+  const alterarStatusPedido = useCallback(async (pedidoId: number, novoStatus: string | number) => {
+    dispatch({ type: 'ATUALIZAR_STATUS_INICIO', payload: pedidoId });
 
     try {
       await atualizarStatusPedido(pedidoId, novoStatus);
-      dispatch({
-        type: TIPOS_ACAO.ATUALIZAR_STATUS_SUCESSO,
-        payload: { pedidoId, novoStatus }
-      });
+      dispatch({ type: 'ATUALIZAR_STATUS_SUCESSO', payload: { pedidoId, novoStatus } });
 
-      // Limpar notificação após 3 segundos
       setTimeout(() => {
-        dispatch({ type: TIPOS_ACAO.LIMPAR_NOTIFICACAO });
+        dispatch({ type: 'LIMPAR_NOTIFICACAO' });
       }, 3000);
+    } catch (erro: any) {
+      dispatch({ type: 'ATUALIZAR_STATUS_ERRO', payload: erro.message });
 
-    } catch (erro) {
-      dispatch({
-        type: TIPOS_ACAO.ATUALIZAR_STATUS_ERRO,
-        payload: erro.message
-      });
-
-      // Limpar notificação de erro após 5 segundos
       setTimeout(() => {
-        dispatch({ type: TIPOS_ACAO.LIMPAR_NOTIFICACAO });
+        dispatch({ type: 'LIMPAR_NOTIFICACAO' });
       }, 5000);
     }
   }, []);
 
-  // Função para buscar pedidos por status
-  const buscarPorStatus = useCallback(async (status) => {
+  const buscarPorStatus = useCallback(async (status: string): Promise<Pedido[]> => {
     try {
       const resposta = await buscarPedidosPorStatus(status);
-      return resposta.dados;
+      return resposta.dados || [];
     } catch (erro) {
-      // toast.error('Erro ao buscar pedidos por status.')
       return [];
     }
   }, []);
 
-  // Função para limpar notificação manualmente
   const limparNotificacao = useCallback(() => {
-    dispatch({ type: TIPOS_ACAO.LIMPAR_NOTIFICACAO });
+    dispatch({ type: 'LIMPAR_NOTIFICACAO' });
   }, []);
 
-  // Seletores úteis
   const seletores = {
     pedidosPendentes: estado.pedidos.filter(p => p.status === 'PENDENTE'),
     pedidosEmProducao: estado.pedidos.filter(p => p.status === 'EM_PREPARO'),
@@ -173,14 +139,9 @@ export function ProviderPedidos({ children }) {
     totalValor: estado.pedidos.reduce((total, pedido) => total + pedido.total, 0)
   };
 
-  const valor = {
-    // Estado
+  const valor: PedidosContextProps = {
     ...estado,
-
-    // Seletores
     ...seletores,
-
-    // Ações
     carregarPedidos,
     alterarStatusPedido,
     buscarPorStatus,
@@ -194,14 +155,11 @@ export function ProviderPedidos({ children }) {
   );
 }
 
-// Hook personalizado para usar o contexto
-export function usePedidos() {
+export function usePedidos(): PedidosContextProps {
   const contexto = useContext(ContextoPedidos);
-
   if (!contexto) {
     throw new Error('usePedidos deve ser usado dentro de um ProviderPedidos');
   }
-
   return contexto;
 }
 

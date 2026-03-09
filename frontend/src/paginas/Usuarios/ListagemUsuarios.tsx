@@ -1,21 +1,22 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { buscarUsuarios } from '../../servicos/apiUsuarios';
-import Tabela from '../../componentes/Tabela/Tabela';
+import Tabela, { ColunaTabela } from '../../componentes/Tabela/Tabela';
 import Spinner from '../../componentes/Spinner/Spinner';
+import { Usuario } from '../../types';
 
 function ListagemUsuarios() {
-  const [usuarios, setUsuarios] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState(null);
+  const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
 
   const carregarUsuarios = useCallback(async () => {
     setCarregando(true);
     setErro(null);
     try {
       const dados = await buscarUsuarios();
-      setUsuarios(dados.dados);
-    } catch (err) {
-      setErro(err.message);
+      setUsuarios(dados.dados || []);
+    } catch (err: any) {
+      setErro(err.message || String(err));
     } finally {
       setCarregando(false);
     }
@@ -25,7 +26,7 @@ function ListagemUsuarios() {
     carregarUsuarios();
   }, [carregarUsuarios]);
 
-  const colunas = [
+  const colunas: ColunaTabela<Usuario>[] = [
     { cabecalho: 'Nome', chave: 'nome' },
     { cabecalho: 'Email', chave: 'email' },
     { cabecalho: 'Função', chave: 'role' },
@@ -44,7 +45,7 @@ function ListagemUsuarios() {
           {erro}
         </div>
       )}
-      {!carregando && !erro && <Tabela colunas={colunas} dados={usuarios} />}
+      {!carregando && !erro && <Tabela<Usuario> colunas={colunas} dados={usuarios} />}
     </div>
   );
 }

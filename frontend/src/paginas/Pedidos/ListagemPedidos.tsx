@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { buscarClientes } from '../../servicos/apiClientes';
 import PedidosKanban from './PedidosKanban';
-import Tabela from '../../componentes/Tabela/Tabela';
+import Tabela, { ColunaTabela } from '../../componentes/Tabela/Tabela';
 import Spinner from '../../componentes/Spinner/Spinner';
 import { usePedidos } from '../../contextos/ContextoPedidos';
+import { Cliente, Pedido } from '../../types';
 
 function ListagemPedidos() {
-  const [visualizacao, setVisualizacao] = useState('kanban'); // 'kanban' ou 'tabela'
-  const [clientes, setClientes] = useState([]);
+  const [visualizacao, setVisualizacao] = useState<'kanban' | 'tabela'>('kanban'); // 'kanban' ou 'tabela'
+  const [clientes, setClientes] = useState<Cliente[]>([]);
 
   // Usar contexto de pedidos
   const {
@@ -29,8 +30,8 @@ function ListagemPedidos() {
 
         // Carregar clientes
         const dadosClientes = await buscarClientes();
-        setClientes(dadosClientes.dados);
-      } catch (err) {
+        setClientes(dadosClientes.dados || []);
+      } catch (err: any) {
         // Ignora erro no console para não vazar objeto de request
       }
     };
@@ -39,12 +40,12 @@ function ListagemPedidos() {
   }, [carregarPedidos]);
 
   // Função para alterar status do pedido
-  const handleStatusChange = useCallback(async (pedidoId, novoStatus) => {
+  const handleStatusChange = useCallback(async (pedidoId: number, novoStatus: string) => {
     await alterarStatusPedido(pedidoId, novoStatus);
   }, [alterarStatusPedido]);
 
   // Colunas para visualização em tabela
-  const colunas = [
+  const colunas: ColunaTabela<Pedido>[] = [
     { cabecalho: 'ID', chave: 'id' },
     { cabecalho: 'Cliente', render: (pedido) => pedido.cliente?.nome || `Cliente ${pedido.clienteId}` },
     { cabecalho: 'Data', render: (pedido) => new Date(pedido.dataPedido).toLocaleDateString('pt-BR') },
@@ -74,8 +75,8 @@ function ListagemPedidos() {
       {notificacao && (
         <div
           className={`fixed right-4 top-4 z-[1000] flex max-w-sm items-center gap-3 animate-slide-right rounded-xl px-5 py-3 shadow-lg ${notificacao.tipo === 'sucesso'
-              ? 'border border-sucesso/20 bg-sucesso/10 text-sucesso'
-              : 'border border-erro/20 bg-erro/10 text-erro'
+            ? 'border border-sucesso/20 bg-sucesso/10 text-sucesso'
+            : 'border border-erro/20 bg-erro/10 text-erro'
             }`}
         >
           <span className="text-sm font-medium">{notificacao.mensagem}</span>
@@ -104,8 +105,8 @@ function ListagemPedidos() {
         <div className="flex gap-1 rounded-xl bg-grafite-100 p-1">
           <button
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${visualizacao === 'kanban'
-                ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
-                : 'text-grafite-500 hover:text-grafite-700'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
+              : 'text-grafite-500 hover:text-grafite-700'
               }`}
             onClick={() => setVisualizacao('kanban')}
           >
@@ -113,8 +114,8 @@ function ListagemPedidos() {
           </button>
           <button
             className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 ${visualizacao === 'tabela'
-                ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
-                : 'text-grafite-500 hover:text-grafite-700'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/25'
+              : 'text-grafite-500 hover:text-grafite-700'
               }`}
             onClick={() => setVisualizacao('tabela')}
           >
@@ -127,9 +128,9 @@ function ListagemPedidos() {
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {[
           { numero: pedidos.length, label: 'Total de Pedidos' },
-          { numero: pedidos.filter(p => p.status === 'PENDENTE').length, label: 'Pendentes' },
-          { numero: pedidos.filter(p => p.status === 'EM_PREPARO').length, label: 'Em Produção' },
-          { numero: pedidos.filter(p => p.status === 'PRONTO').length, label: 'Prontos' },
+          { numero: pedidos.filter(p => p.status === 'PENDENTE' || p.status === 1).length, label: 'Pendentes' },
+          { numero: pedidos.filter(p => p.status === 'EM_PREPARO' || p.status === 2).length, label: 'Em Produção' },
+          { numero: pedidos.filter(p => p.status === 'PRONTO' || p.status === 3).length, label: 'Prontos' },
         ].map((item, i) => (
           <div
             key={i}
@@ -160,7 +161,7 @@ function ListagemPedidos() {
               onStatusChange={handleStatusChange}
             />
           ) : (
-            <Tabela colunas={colunas} dados={pedidos} />
+            <Tabela<Pedido> colunas={colunas} dados={pedidos} />
           )}
         </>
       )}

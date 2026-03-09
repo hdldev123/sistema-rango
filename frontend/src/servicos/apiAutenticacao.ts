@@ -1,14 +1,8 @@
 import api from './api';
 import { mapUsuarioDoBackend } from '../utils/mapeamentos';
+import { LoginResponse } from '../types';
 
-/**
- * Realiza login no backend.
- * POST /api/auth/login
- * @param {string} email
- * @param {string} senha
- * @returns {Promise<{ token: string, usuario: import('../types/index').Usuario }>}
- */
-export const apiLogin = async (email, senha) => {
+export const apiLogin = async (email: string, senha: string): Promise<LoginResponse> => {
   const response = await api.post('/api/auth/login', { email, senha });
   const { token, usuario, expiracao } = response.data;
 
@@ -19,10 +13,6 @@ export const apiLogin = async (email, senha) => {
   };
 };
 
-/**
- * Realiza logout (limpa localStorage — o backend é stateless com JWT).
- * @returns {Promise<void>}
- */
-export const apiLogout = () => {
+export const apiLogout = (): Promise<void> => {
   return Promise.resolve();
 };

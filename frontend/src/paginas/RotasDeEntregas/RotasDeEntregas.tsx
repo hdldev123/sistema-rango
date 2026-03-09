@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { buscarLoteEntrega, liberarLote, buscarPedidosEmTransito } from '../../servicos/apiEntregas';
 import { atualizarStatusPedido } from '../../servicos/apiPedidos';
 import Spinner from '../../componentes/Spinner/Spinner';
+import { Pedido } from '../../types';
 
 // ─── Constantes do Lote ──────────────────────────────────────────────
 const CAPACIDADE_MAXIMA = 1000;
@@ -9,17 +10,17 @@ const VOLUME_MINIMO = 900;
 
 function RotasDeEntrega() {
   // Estado — Lote Pendente (pedidos Pronto)
-  const [pedidosProntos, setPedidosProntos] = useState([]);
-  const [totalItens, setTotalItens] = useState(0);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState(null);
-  const [loteIniciando, setLoteIniciando] = useState(false);
-  const [loteIniciado, setLoteIniciado] = useState(false);
+  const [pedidosProntos, setPedidosProntos] = useState<Pedido[]>([]);
+  const [totalItens, setTotalItens] = useState<number>(0);
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
+  const [loteIniciando, setLoteIniciando] = useState<boolean>(false);
+  const [loteIniciado, setLoteIniciado] = useState<boolean>(false);
 
   // Estado — Lote Em Andamento (pedidos Em Entrega)
-  const [pedidosEmTransito, setPedidosEmTransito] = useState([]);
-  const [carregandoTransito, setCarregandoTransito] = useState(true);
-  const [valorTotalTransito, setValorTotalTransito] = useState(0);
+  const [pedidosEmTransito, setPedidosEmTransito] = useState<Pedido[]>([]);
+  const [carregandoTransito, setCarregandoTransito] = useState<boolean>(true);
+  const [valorTotalTransito, setValorTotalTransito] = useState<number>(0);
 
   // ─── Carregar dados do lote pendente ───────────────────────────────
   const carregarLote = useCallback(async () => {
@@ -28,9 +29,9 @@ function RotasDeEntrega() {
 
     try {
       const resposta = await buscarLoteEntrega();
-      setPedidosProntos(resposta.pedidosProntos);
-      setTotalItens(resposta.totalItensAcumulados);
-    } catch (err) {
+      setPedidosProntos(resposta.pedidosProntos || []);
+      setTotalItens(resposta.totalItensAcumulados || 0);
+    } catch (err: any) {
       setErro('Não foi possível carregar o lote de entrega.');
     } finally {
       setCarregando(false);
@@ -42,9 +43,9 @@ function RotasDeEntrega() {
     setCarregandoTransito(true);
     try {
       const resposta = await buscarPedidosEmTransito();
-      setPedidosEmTransito(resposta.pedidosEmTransito);
-      setValorTotalTransito(resposta.valorTotal);
-    } catch (err) {
+      setPedidosEmTransito(resposta.pedidosEmTransito || []);
+      setValorTotalTransito(resposta.valorTotal || 0);
+    } catch (err: any) {
       console.error('Erro ao carregar pedidos em trânsito:', err);
     } finally {
       setCarregandoTransito(false);
@@ -71,28 +72,28 @@ function RotasDeEntrega() {
         carregarLote();
         carregarEmTransito();
       }, 1500);
-    } catch (err) {
-      setErro(`Erro ao liberar o lote: ${err.message}`);
+    } catch (err: any) {
+      setErro(`Erro ao liberar o lote: ${err.message || String(err)}`);
     } finally {
       setLoteIniciando(false);
     }
   }, [carregarLote, carregarEmTransito]);
 
   // ─── Marcar pedido individual como entregue ────────────────────────
-  const marcarEntregue = useCallback(async (pedido) => {
+  const marcarEntregue = useCallback(async (pedido: Pedido) => {
     try {
       await atualizarStatusPedido(pedido.id, 'ENTREGUE');
       // Remover da lista local
       setPedidosEmTransito((prev) => prev.filter((p) => p.id !== pedido.id));
       setValorTotalTransito((prev) => prev - (pedido.total || 0));
-    } catch (err) {
-      setErro(`Erro ao marcar pedido como entregue: ${err.message}`);
+    } catch (err: any) {
+      setErro(`Erro ao marcar pedido como entregue: ${err.message || String(err)}`);
     }
   }, []);
 
   // ─── Helpers ───────────────────────────────────────────────────────
-  const formatarMoeda = (valor) =>
-    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+  const formatarMoeda = (valor: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
 
   const porcentagem = Math.min((totalItens / CAPACIDADE_MAXIMA) * 100, 100);
   const loteDisponivel = totalItens >= VOLUME_MINIMO;
@@ -165,8 +166,8 @@ function RotasDeEntrega() {
                 </div>
 
                 <span className={`inline-flex items-center rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-wider ${loteDisponivel
-                    ? 'bg-sucesso/10 text-sucesso'
-                    : 'bg-aviso/10 text-aviso'
+                  ? 'bg-sucesso/10 text-sucesso'
+                  : 'bg-aviso/10 text-aviso'
                   }`}>
                   {loteDisponivel ? '✅ Lote pronto' : '⏳ Acumulando...'}
                 </span>
@@ -237,8 +238,8 @@ function RotasDeEntrega() {
                       )}
                       <button
                         className={`relative inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-base font-bold transition-all duration-300 ${loteDisponivel
-                            ? 'bg-sucesso text-white shadow-lg shadow-sucesso/30 hover:-translate-y-1 hover:shadow-xl hover:shadow-sucesso/40 active:translate-y-0'
-                            : 'cursor-not-allowed bg-grafite-200 text-grafite-400'
+                          ? 'bg-sucesso text-white shadow-lg shadow-sucesso/30 hover:-translate-y-1 hover:shadow-xl hover:shadow-sucesso/40 active:translate-y-0'
+                          : 'cursor-not-allowed bg-grafite-200 text-grafite-400'
                           }`}
                         onClick={handleLiberarLote}
                         disabled={!loteDisponivel || loteIniciando}

@@ -1,36 +1,36 @@
-import React, { createContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiLogin, apiLogout } from '../servicos/apiAutenticacao';
+import { Usuario } from '../types';
 
-// Cria o Contexto de Autenticação para ser usado em toda a aplicação.
-export const ContextoAutenticacao = createContext();
+export interface AutenticacaoContextProps {
+  usuario: Usuario | null;
+  token: string | null;
+  carregando: boolean;
+  login: (email: string, senha: string) => Promise<void>;
+  logout: () => void;
+}
 
-/**
- * Provedor do Contexto de Autenticação.
- * Este componente envolve a aplicação e gerencia o estado de autenticação,
- * como os dados do usuário e o token.
- */
-export function ProvedorAutenticacao({ children }) {
-  const [usuario, setUsuario] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [carregando, setCarregando] = useState(true); // Usado para verificar o token inicial
+export const ContextoAutenticacao = createContext<AutenticacaoContextProps | undefined>(undefined);
+
+export function ProvedorAutenticacao({ children }: { children: ReactNode }) {
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('token'));
+  const [carregando, setCarregando] = useState<boolean>(true);
   const navigate = useNavigate();
 
-  // useEffect para verificar o token no localStorage na inicialização da aplicação.
-  // Isso mantém o usuário logado mesmo que ele atualize a página.
   useEffect(() => {
     const tokenArmazenado = localStorage.getItem('token');
     const usuarioArmazenado = localStorage.getItem('usuario');
 
     if (tokenArmazenado && usuarioArmazenado) {
       setToken(tokenArmazenado);
-      setUsuario(JSON.parse(usuarioArmazenado));
+      setUsuario(JSON.parse(usuarioArmazenado) as Usuario);
     }
     setCarregando(false);
   }, []);
 
-  // Função de login
-  const login = useCallback(async (email, senha) => {
+  const login = useCallback(async (email: string, senha: string) => {
     try {
       const resposta = await apiLogin(email, senha);
       const { token: novoToken, usuario: dadosUsuario } = resposta;
@@ -40,8 +40,6 @@ export function ProvedorAutenticacao({ children }) {
       setToken(novoToken);
       setUsuario(dadosUsuario);
 
-      // Redireciona o usuário com base na sua função (role)
-      // O mapeamento de perfil→role já foi feito no apiAutenticacao.js
       switch (dadosUsuario.role) {
         case 'ADMINISTRADOR':
         case 'ATENDENTE':
@@ -55,14 +53,12 @@ export function ProvedorAutenticacao({ children }) {
       }
 
     } catch (erro) {
-      // Propaga o erro com a mensagem do backend (tratada pelo interceptor)
       throw erro;
     }
   }, [navigate]);
 
-  // Função de logout
   const logout = useCallback(() => {
-    apiLogout(); // Simula a invalidação do token no backend
+    apiLogout();
     localStorage.removeItem('token');
     localStorage.removeItem('usuario');
     setToken(null);
@@ -70,8 +66,7 @@ export function ProvedorAutenticacao({ children }) {
     navigate('/login');
   }, [navigate]);
 
-  // O valor fornecido pelo contexto inclui o estado do usuário e as funções de login/logout.
-  const valor = {
+  const valor: AutenticacaoContextProps = {
     usuario,
     token,
     carregando,

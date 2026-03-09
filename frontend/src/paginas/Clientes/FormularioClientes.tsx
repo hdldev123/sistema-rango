@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { criarCliente, atualizarCliente } from '../../servicos/apiClientes';
+import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
+import { criarCliente, atualizarCliente, CriarClienteDto } from '../../servicos/apiClientes';
+import { Cliente } from '../../types';
 
-function FormularioCliente({ cliente, aoSalvar }) {
-  const [formData, setFormData] = useState({
+interface FormularioClienteProps {
+  cliente: Cliente | null;
+  aoSalvar: () => void;
+}
+
+function FormularioCliente({ cliente, aoSalvar }: FormularioClienteProps) {
+  const [formData, setFormData] = useState<CriarClienteDto>({
     nome: '',
     email: '',
     telefone: '',
@@ -11,18 +17,23 @@ function FormularioCliente({ cliente, aoSalvar }) {
 
   useEffect(() => {
     if (cliente) {
-      setFormData(cliente);
+      setFormData({
+        nome: cliente.nome,
+        email: cliente.email || '',
+        telefone: cliente.telefone,
+        endereco: cliente.endereco || '',
+      });
     } else {
       setFormData({ nome: '', email: '', telefone: '', endereco: '' });
     }
   }, [cliente]);
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prevState => ({ ...prevState, [name]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       if (cliente) {
@@ -50,7 +61,7 @@ function FormularioCliente({ cliente, aoSalvar }) {
       </div>
       <div className="mb-4">
         <label htmlFor="telefone" className="mb-1.5 block text-sm font-medium text-grafite-700">Telefone</label>
-        <input type="text" name="telefone" value={formData.telefone} onChange={handleChange} className={inputClasses} />
+        <input type="text" name="telefone" value={formData.telefone} onChange={handleChange} required className={inputClasses} />
       </div>
       <div className="mb-4">
         <label htmlFor="endereco" className="mb-1.5 block text-sm font-medium text-grafite-700">Endereço</label>

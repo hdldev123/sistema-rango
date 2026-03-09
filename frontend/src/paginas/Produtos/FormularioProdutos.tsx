@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { criarProduto, atualizarProduto } from '../../servicos/apiProdutos';
+import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
+import { criarProduto, atualizarProduto, CriarProdutoDto } from '../../servicos/apiProdutos';
+import { Produto } from '../../types';
 
-function FormularioProduto({ produto, aoSalvar }) {
-  const [formData, setFormData] = useState({
+interface FormularioProdutoProps {
+  produto: Produto | null;
+  aoSalvar: () => void;
+}
+
+function FormularioProduto({ produto, aoSalvar }: FormularioProdutoProps) {
+  const [formData, setFormData] = useState<CriarProdutoDto>({
     nome: '',
     categoria: '',
     descricao: '',
@@ -24,7 +30,7 @@ function FormularioProduto({ produto, aoSalvar }) {
     }
   }, [produto]);
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
     setFormData(prevState => ({
       ...prevState,
@@ -32,7 +38,7 @@ function FormularioProduto({ produto, aoSalvar }) {
     }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     try {
       if (produto) {

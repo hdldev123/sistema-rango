@@ -1,6 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Pedido, Cliente } from '../../types';
 
-const STATUS_CONFIG = {
+interface StatusConfigItem {
+  label: string;
+  cor: string;
+  bgCor: string;
+  ordem: number;
+  descricao: string;
+}
+
+const STATUS_CONFIG: Record<string, StatusConfigItem> = {
   PENDENTE: {
     label: 'Pendente',
     cor: '#eab308',
@@ -38,29 +47,35 @@ const STATUS_CONFIG = {
   }
 };
 
-function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
-  const [pedidosAtualizados, setPedidosAtualizados] = useState(pedidos);
-  const [pedidoAtualizando, setPedidoAtualizando] = useState(null);
+interface PedidosKanbanProps {
+  pedidos: Pedido[];
+  clientes?: Cliente[];
+  onStatusChange?: (pedidoId: number, novoStatus: string) => Promise<void>;
+}
+
+function PedidosKanban({ pedidos, onStatusChange, clientes = [] }: PedidosKanbanProps) {
+  const [pedidosAtualizados, setPedidosAtualizados] = useState<Pedido[]>(pedidos);
+  const [pedidoAtualizando, setPedidoAtualizando] = useState<number | null>(null);
 
   // Sincronizar com props quando pedidos mudam
   useEffect(() => {
     setPedidosAtualizados(pedidos);
   }, [pedidos]);
 
-  const obterNomeCliente = useCallback((clienteId) => {
+  const obterNomeCliente = useCallback((clienteId: number) => {
     const cliente = clientes.find(c => c.id === clienteId);
     return cliente ? cliente.nome : `Cliente ${clienteId}`;
   }, [clientes]);
 
-  const formatarMoeda = useCallback((valor) => {
+  const formatarMoeda = useCallback((valor: number) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(valor);
+    }).format(valor || 0);
   }, []);
 
   const agruparPedidosPorStatus = useCallback(() => {
-    const grupos = {};
+    const grupos: Record<string, Pedido[]> = {};
 
     // Inicializar todos os status
     Object.keys(STATUS_CONFIG).forEach(status => {
@@ -69,10 +84,10 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
 
     // Agrupar pedidos por status
     pedidosAtualizados.forEach(pedido => {
-      let statusMapeado = pedido.status;
+      let statusMapeado = String(pedido.status);
 
       // Mapear os status do backend para as colunas do Kanban
-      switch (pedido.status) {
+      switch (statusMapeado) {
         case 'EM_PREPARO':
           statusMapeado = 'EM_PRODUCAO';
           break;
@@ -86,7 +101,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
           // Cancelados não aparecem no Kanban
           return;
         default:
-          statusMapeado = pedido.status;
+          break;
       }
 
       if (grupos[statusMapeado]) {
@@ -97,7 +112,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
     return grupos;
   }, [pedidosAtualizados]);
 
-  const handleStatusChange = useCallback(async (pedidoId, novoStatus) => {
+  const handleStatusChange = useCallback(async (pedidoId: number, novoStatus: string) => {
     setPedidoAtualizando(pedidoId);
 
     try {
@@ -122,7 +137,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
     }
   }, [onStatusChange, pedidos]);
 
-  const StatusDropdown = ({ pedido }) => (
+  const StatusDropdown = ({ pedido }: { pedido: Pedido }) => (
     <div className="relative">
       <select
         className="min-w-[100px] cursor-pointer rounded-lg border border-grafite-200 bg-grafite-50 px-2 py-1 text-xs font-semibold text-grafite-700 transition-all duration-200 hover:border-primary-500 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
@@ -147,7 +162,7 @@ function PedidosKanban({ pedidos, onStatusChange, clientes = [] }) {
     </div>
   );
 
-  const PedidoCard = ({ pedido }) => (
+  const PedidoCard = ({ pedido }: { pedido: Pedido }) => (
     <div
       className={`rounded-2xl border border-grafite-200 bg-white p-4 shadow-soft transition-all duration-300 hover:-translate-y-1 hover:border-primary-400 hover:shadow-xl ${pedidoAtualizando === pedido.id ? 'pointer-events-none opacity-70' : 'cursor-pointer'
         }`}

@@ -1,17 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { buscarDashboardCompleto } from '../../servicos/apiDashboard';
 import Spinner from '../../componentes/Spinner/Spinner';
+import { DashboardKPIs } from '../../types';
 
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
-// Mapeamento de número do mês para nome abreviado
 const MESES = ['', 'Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 
+interface VendaChartData {
+  name: string;
+  Vendas: number;
+  Pedidos: number;
+}
+
 function Dashboard() {
-  const [kpis, setKpis] = useState(null);
-  const [vendasData, setVendasData] = useState([]);
-  const [carregando, setCarregando] = useState(true);
-  const [erro, setErro] = useState(null);
+  const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
+  const [vendasData, setVendasData] = useState<VendaChartData[]>([]);
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     const carregarDashboard = async () => {
@@ -21,16 +27,15 @@ function Dashboard() {
 
         setKpis(dados.kpis);
 
-        // Transforma pedidosPorMes no formato esperado pelo Recharts
         if (dados.pedidosPorMes) {
-          const vendas = dados.pedidosPorMes.map(item => ({
+          const vendas: VendaChartData[] = dados.pedidosPorMes.map((item: any) => ({
             name: `${MESES[item.mes]}/${item.ano}`,
             Vendas: item.receita,
             Pedidos: item.quantidade,
           }));
           setVendasData(vendas);
         }
-      } catch (err) {
+      } catch (err: any) {
         setErro(err.mensagem || err.message || 'Erro ao carregar dados do dashboard');
       } finally {
         setCarregando(false);
@@ -40,7 +45,7 @@ function Dashboard() {
     carregarDashboard();
   }, []);
 
-  const formatarMoeda = (valor) => {
+  const formatarMoeda = (valor: number | undefined) => {
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL',
@@ -69,7 +74,6 @@ function Dashboard() {
     <div className="animate-fade-in">
       <h1 className="mb-6 text-3xl font-bold text-grafite-800">Dashboard</h1>
 
-      {/* KPI Cards */}
       <div className="mb-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { titulo: 'Pedidos Hoje', valor: kpis?.pedidosHoje ?? 0 },
@@ -89,7 +93,6 @@ function Dashboard() {
         ))}
       </div>
 
-      {/* Gráfico de Vendas */}
       <div className="rounded-2xl border border-grafite-200 bg-white p-8 shadow-soft">
         <h3 className="mb-6 text-xl font-semibold text-grafite-800">Vendas nos Últimos 6 Meses</h3>
         {vendasData.length > 0 ? (
@@ -99,7 +102,7 @@ function Dashboard() {
               <XAxis dataKey="name" stroke="#6b7280" fontSize={12} />
               <YAxis stroke="#6b7280" fontSize={12} />
               <Tooltip
-                formatter={(value) => formatarMoeda(value)}
+                formatter={(value: number) => formatarMoeda(value)}
                 contentStyle={{
                   borderRadius: '12px',
                   border: '1px solid #e5e7eb',

@@ -1,44 +1,30 @@
 import api from './api';
+import { DashboardKPIs, PedidosPorMes, DistribuicaoStatus } from '../types';
 
-/**
- * Busca os KPIs do dashboard.
- * GET /api/dashboard/kpis
- * @returns {Promise<import('../types/index').DashboardKPIs>}
- */
-export const buscarKpis = async () => {
+export const buscarKpis = async (): Promise<DashboardKPIs> => {
   const response = await api.get('/api/dashboard/kpis');
   return response.data;
 };
 
-/**
- * Busca dados de pedidos agrupados por mês.
- * GET /api/dashboard/pedidos-por-mes?meses=
- * @param {number} [meses=6] - Quantidade de meses retroativos
- * @returns {Promise<import('../types/index').PedidosPorMes[]>}
- */
-export const buscarPedidosPorMes = async (meses = 6) => {
+export const buscarPedidosPorMes = async (meses: number = 6): Promise<PedidosPorMes[]> => {
   const response = await api.get('/api/dashboard/pedidos-por-mes', {
     params: { meses },
   });
   return response.data;
 };
 
-/**
- * Busca a distribuição de status dos pedidos.
- * GET /api/dashboard/distribuicao-status
- * @returns {Promise<import('../types/index').DistribuicaoStatus[]>}
- */
-export const buscarDistribuicaoStatus = async () => {
+export const buscarDistribuicaoStatus = async (): Promise<DistribuicaoStatus[]> => {
   const response = await api.get('/api/dashboard/distribuicao-status');
   return response.data;
 };
 
-/**
- * Busca todos os dados do dashboard de uma vez.
- * GET /api/dashboard/completo
- * @returns {Promise<{ kpis: DashboardKPIs, pedidosPorMes: PedidosPorMes[], distribuicaoStatus: DistribuicaoStatus[] }>}
- */
-export const buscarDashboardCompleto = async () => {
+export interface DashboardCompletoResponse {
+  kpis: DashboardKPIs;
+  pedidosPorMes: PedidosPorMes[];
+  distribuicaoStatus: DistribuicaoStatus[];
+}
+
+export const buscarDashboardCompleto = async (): Promise<DashboardCompletoResponse> => {
   const response = await api.get('/api/dashboard/completo');
   return response.data;
 };

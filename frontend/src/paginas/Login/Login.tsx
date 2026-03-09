@@ -1,23 +1,26 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, FormEvent } from 'react';
 import { ContextoAutenticacao } from '../../contextos/ContextoAutenticacao';
 
 function Login() {
-  const [email, setEmail] = useState('');
-  const [senha, setSenha] = useState('');
-  const [erro, setErro] = useState('');
-  const [carregando, setCarregando] = useState(false);
-  const { login } = useContext(ContextoAutenticacao);
+  const [email, setEmail] = useState<string>('');
+  const [senha, setSenha] = useState<string>('');
+  const [erro, setErro] = useState<string>('');
+  const [carregando, setCarregando] = useState<boolean>(false);
 
-  const handleSubmit = async (e) => {
+  const contexto = useContext(ContextoAutenticacao);
+  const login = contexto?.login;
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!login) return;
+
     setErro('');
     setCarregando(true);
-    
+
     try {
       await login(email, senha);
-      // O redirecionamento é feito dentro da função de login no contexto
-    } catch (error) {
-      setErro(error.message || 'Falha ao fazer login. Verifique suas credenciais.');
+    } catch (error: any) {
+      setErro(error.mensagem || error.message || 'Falha ao fazer login. Verifique suas credenciais.');
     } finally {
       setCarregando(false);
     }
@@ -27,16 +30,16 @@ function Login() {
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-grafite-100 via-grafite-50 to-primary-50 p-4">
       <div className="w-full max-w-md animate-slide-up rounded-2xl glass p-10 text-center shadow-glass">
         <div className="border-b border-grafite-200 px-6 py-5 text-center">
-        <img 
-          src="/logo.png" 
-          alt="X Salgados" 
-          className="mx-auto h-20 w-auto object-contain"
-        />
-      </div>
+          <img
+            src="/logo.png"
+            alt="X Salgados"
+            className="mx-auto h-20 w-auto object-contain"
+          />
+        </div>
         <p className="mb-8 text-base text-grafite-400">
           Acesse o painel de gestão
         </p>
-        
+
         <form onSubmit={handleSubmit} className="text-left">
           <div className="mb-4">
             <label
@@ -45,9 +48,9 @@ function Login() {
             >
               E-mail
             </label>
-            <input 
-              type="email" 
-              id="email" 
+            <input
+              type="email"
+              id="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="seuemail@exemplo.com"
@@ -62,9 +65,9 @@ function Login() {
             >
               Senha
             </label>
-            <input 
-              type="password" 
-              id="senha" 
+            <input
+              type="password"
+              id="senha"
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
               placeholder="Sua senha"

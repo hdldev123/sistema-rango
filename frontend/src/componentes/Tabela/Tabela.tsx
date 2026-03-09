@@ -1,12 +1,17 @@
 import React from 'react';
 
-/**
- * Componente de Tabela Reutilizável.
- * * @param {object} props
- * @param {Array<object>} props.colunas - Configuração das colunas. Ex: [{ cabecalho: 'Nome', chave: 'nome' }]
- * @param {Array<object>} props.dados - Os dados a serem exibidos na tabela.
- */
-function Tabela({ colunas, dados }) {
+export interface ColunaTabela<T> {
+  cabecalho: string;
+  chave?: keyof T;
+  render?: (item: T) => React.ReactNode;
+}
+
+export interface TabelaProps<T> {
+  colunas: ColunaTabela<T>[];
+  dados: T[];
+}
+
+function Tabela<T extends { id?: number | string }>({ colunas, dados }: TabelaProps<T>) {
 
   if (!dados || dados.length === 0) {
     return <p className="py-8 text-center text-grafite-400">Nenhum dado encontrado.</p>;
@@ -38,7 +43,7 @@ function Tabela({ colunas, dados }) {
                   key={colunaIndex}
                   className="px-6 py-4 text-sm text-grafite-700"
                 >
-                  {coluna.render ? coluna.render(item) : item[coluna.chave]}
+                  {coluna.render ? coluna.render(item) : (coluna.chave ? (item[coluna.chave] as unknown as React.ReactNode) : null)}
                 </td>
               ))}
             </tr>
