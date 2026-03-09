@@ -1,4 +1,5 @@
 import type { WASocket } from '@whiskeysockets/baileys';
+import { supabase } from '../config/database';
 
 // ─── Estado Global ───────────────────────────────────────────────────
 
@@ -33,6 +34,61 @@ export function getTamanhoMapaLid(): number {
 
 export function hasMapeamentoLid(lidJid: string): boolean {
     return lidParaPhone.has(lidJid);
+}
+
+/**
+ * Aquece os mapas locais buscando LIDs salvos no banco de dados.
+ * Utiliza paginação para contornar o limite padrão (1000) do PostgREST.
+ */
+export async function aquecerMapaLid(): Promise<void> {
+    const TAMANHO_PAGINA = 1000;
+    let pagina = 0;
+    let buscouTudo = false;
+    let adicionados = 0;
+
+    console.log('[Baileys] 🔄 Aquecendo mapa LID↔Telefone a partir do banco de dados...');
+
+    try {
+        while (!buscouTudo) {
+            const inicio = pagina * TAMANHO_PAGINA;
+            const fim = inicio + TAMANHO_PAGINA - 1;
+
+            const { data, error } = await supabase
+                .from('clientes')
+                .select('whatsapp_jid, whatsapp_lid')
+                .not('whatsapp_lid', 'is', null)
+                .not('whatsapp_jid', 'is', null)
+                .range(inicio, fim);
+
+            if (error) {
+                console.error('[Baileys] Erro ao buscar mapeamentos no banco:', error.message);
+                break;
+            }
+
+            if (!data || data.length === 0) {
+                buscouTudo = true;
+                break;
+            }
+
+            for (const c of data) {
+                // Sobrescreve apenas se não existir para não quebrar uma sessão em memória recente
+                if (!lidParaPhone.has(c.whatsapp_lid)) {
+                    adicionarMapeamento(c.whatsapp_lid, c.whatsapp_jid);
+                    adicionados++;
+                }
+            }
+
+            if (data.length < TAMANHO_PAGINA) {
+                buscouTudo = true;
+            } else {
+                pagina++;
+            }
+        }
+
+        console.log(`[Baileys] 📇 Mapa aquecido com sucesso! Adicionados do DB: ${adicionados}. Tamanho atual: ${lidParaPhone.size}`);
+    } catch (err: unknown) {
+        console.error('[Baileys] Falha catastrofica ao aquecer mapa LID:', err instanceof Error ? err.message : err);
+    }
 }
 
 /**

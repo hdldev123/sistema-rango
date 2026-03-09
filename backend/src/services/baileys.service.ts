@@ -18,7 +18,8 @@ import {
     adicionarMapeamento,
     getTamanhoMapaLid,
     hasMapeamentoLid,
-    resolverLidParaTelefone
+    resolverLidParaTelefone,
+    aquecerMapaLid
 } from './jid-resolver.service';
 
 // ─── Estado Global ───────────────────────────────────────────────────
@@ -75,6 +76,9 @@ export async function iniciarBaileys(): Promise<void> {
 
         if (connection === 'open') {
             console.log('[Baileys] ✅ Conectado ao WhatsApp com sucesso!');
+
+            // Aqui acionamos o "Aquecimento" via DB Paginado, rodando assincronamente e sem bloquear
+            aquecerMapaLid().catch(err => console.error('[Baileys] Erro no warmup de LIDs:', err));
 
             // Fallback: popular mapa LID↔telefone a partir de sock.contacts
             // (pode já estar disponível se a sessão já estava autenticada)
