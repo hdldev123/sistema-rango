@@ -41,7 +41,7 @@ async function seed() {
 
   for (const usuario of usuariosPadrao) {
     console.log(`\nProcessando usuário: ${usuario.nome}...`);
-    
+
     // Verifica se o usuário já existe
     const { data: usuarioExistente } = await supabase
       .from('usuarios')
@@ -100,18 +100,33 @@ async function seed() {
     clienteId = novoCliente?.id;
   }
 
-  // 2. Criar um Produto de Teste
-  let produtoId;
-  const { data: popExistente } = await supabase.from('produtos').select('id').limit(1).maybeSingle();
-  if (popExistente) {
-    produtoId = popExistente.id;
-  } else {
-    const { data: novoProduto, error: errP } = await supabase.from('produtos')
-      .insert({ nome: 'Cento de Coxinha', preco_atual: 60.00 })
-      .select('id').single();
-    if (errP) console.error('Erro Produto:', errP);
-    produtoId = novoProduto?.id;
+  // 2. Criar/Atualizar Produtos Base
+  const produtosPadrao = [
+    { nome: 'Coxinha', preco: 1.20, ativo: true },
+    { nome: 'Risole', preco: 1.20, ativo: true },
+    { nome: 'Pastel', preco: 1.50, ativo: true },
+  ];
+
+  for (const prod of produtosPadrao) {
+    const { data: existente } = await supabase
+      .from('produtos')
+      .select('id')
+      .eq('nome', prod.nome)
+      .maybeSingle();
+
+    if (existente) {
+      console.log(`⚠️  Produto "${prod.nome}" já existe (ID: ${existente.id}).`);
+    } else {
+      const { error: errP } = await supabase.from('produtos').insert(prod);
+      if (errP) console.error(`Erro ao criar produto "${prod.nome}":`, errP.message);
+      else console.log(`✅ Produto "${prod.nome}" criado (R$ ${prod.preco.toFixed(2)}).`);
+    }
   }
+
+  // Buscar o primeiro produto para os pedidos de teste
+  let produtoId;
+  const { data: primeiroProduto } = await supabase.from('produtos').select('id').limit(1).maybeSingle();
+  produtoId = primeiroProduto?.id;
 
   // 3. Criar 3 Pedidos Prontos (Status 3), cada um com 350 salgados (Total = 1050 salgados)
   if (clienteId && produtoId) {

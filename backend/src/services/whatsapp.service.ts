@@ -480,42 +480,135 @@ async function notificarAdministrador(
     }
 }
 
-// ─── Criação de Pedido via WhatsApp ──────────────────────────────────
+// ─── Menus de Criação de Pedido (Quantidade → Produto) ──────────────
+
+/** Opções fixas de quantidade mínima */
+const OPCOES_QUANTIDADE: readonly number[] = [100, 300, 500, 1000];
 
 /**
- * Cria um pedido placeholder para o cliente.
- *
- * Como o bot ainda não interpreta as quantidades, cria o pedido
- * com o primeiro produto ativo (quantidade 1) e salva o texto
- * original do cliente nas observações para tratamento manual.
+ * Envia o menu numérico de quantidades.
  */
-async function criarPedidoPlaceholder(
-    cliente: { id: number; nome: string; endereco?: string | null },
-    textoPedido: string,
-    remoteJid: string,
-): Promise<void> {
-    // Buscar primeiro produto ativo para usar como item placeholder
-    const { data: produto } = await supabase
-        .from('produtos')
-        .select('id, nome')
-        .eq('ativo', true)
-        .order('id', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+async function enviarMenuQuantidade(remoteJid: string, nomeCliente: string): Promise<void> {
+    const linhas = OPCOES_QUANTIDADE.map((q, i) => `*[${i + 1}]* ${q} unidades`).join('\n');
 
-    if (!produto) {
+    await enviarMensagem(
+        remoteJid,
+        `Ok, *${nomeCliente}*! Vamos montar seu pedido. 🛒\n\n` +
+        `Primeiro, escolha a *quantidade*:\n\n` +
+        `${linhas}\n\n` +
+        `_Responda com o número da opção desejada._`,
+    );
+}
+
+/**
+ * Processa a resposta do menu de quantidade.
+ * Valida o input (1-4) e transita para MENU_PRODUTO.
+ */
+async function processarMenuQuantidade(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+): Promise<void> {
+    const opcao = parseInt(texto.trim(), 10);
+
+    if (isNaN(opcao) || opcao < 1 || opcao > OPCOES_QUANTIDADE.length) {
         await enviarMensagem(
             remoteJid,
-            `Desculpe, *${cliente.nome}*! Estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+            `Hmm, não entendi. 🤔\nPor favor, responda apenas com o *número* da opção:\n\n` +
+            OPCOES_QUANTIDADE.map((q, i) => `*[${i + 1}]* ${q} unidades`).join('\n'),
         );
-        console.warn('[WhatsApp] Nenhum produto ativo encontrado para criar pedido.');
+        return; // Mantém no MENU_QUANTIDADE
+    }
+
+    const quantidade = OPCOES_QUANTIDADE[opcao - 1];
+
+    // Salvar quantidade na sessão e transitar para MENU_PRODUTO
+    await definirEstado(telefoneLimpo, EtapaConversa.MENU_PRODUTO, { quantidadeEscolhida: quantidade });
+    await enviarMenuProduto(remoteJid, quantidade);
+    console.log(`[WhatsApp] Quantidade ${quantidade} selecionada por ${cliente.nome}.`);
+}
+
+/**
+ * Busca produtos ativos do banco e envia menu dinâmico.
+ */
+async function enviarMenuProduto(remoteJid: string, quantidade: number): Promise<void> {
+    const { data: produtos, error } = await supabase
+        .from('produtos')
+        .select('id, nome, preco')
+        .eq('ativo', true)
+        .order('nome', { ascending: true });
+
+    if (error || !produtos || produtos.length === 0) {
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+        );
         return;
     }
 
+    const linhas = produtos.map((p, i) =>
+        `*[${i + 1}]* ${p.nome} — R$ ${Number(p.preco).toFixed(2)}/un`,
+    ).join('\n');
+
+    await enviarMensagem(
+        remoteJid,
+        `Ótimo! *${quantidade} unidades* selecionadas. 📦\n\n` +
+        `Agora escolha o *produto*:\n\n` +
+        `${linhas}\n\n` +
+        `_Responda com o número da opção desejada._`,
+    );
+}
+
+/**
+ * Processa a escolha de produto e finaliza o pedido.
+ * Valida o input, chama `pedidoService.criarAsync` com produtoId e quantidade exatos.
+ */
+async function processarMenuProdutoEFinalizar(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+    quantidade: number,
+): Promise<void> {
+    // Buscar produtos ativos para validar o input
+    const { data: produtos, error: dbErr } = await supabase
+        .from('produtos')
+        .select('id, nome, preco')
+        .eq('ativo', true)
+        .order('nome', { ascending: true });
+
+    if (dbErr || !produtos || produtos.length === 0) {
+        await limparEstado(telefoneLimpo);
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+        );
+        return;
+    }
+
+    const opcao = parseInt(texto.trim(), 10);
+
+    if (isNaN(opcao) || opcao < 1 || opcao > produtos.length) {
+        const linhas = produtos.map((p, i) =>
+            `*[${i + 1}]* ${p.nome} — R$ ${Number(p.preco).toFixed(2)}/un`,
+        ).join('\n');
+
+        await enviarMensagem(
+            remoteJid,
+            `Hmm, não entendi. 🤔\nPor favor, responda apenas com o *número* do produto:\n\n` +
+            `${linhas}`,
+        );
+        return; // Mantém no MENU_PRODUTO
+    }
+
+    const produtoEscolhido = produtos[opcao - 1];
+
+    // Criar pedido com valores exatos
     const pedidoInput = {
         clienteId: cliente.id,
-        observacoes: `[Via WhatsApp] ${textoPedido}`,
-        itens: [{ produtoId: produto.id, quantidade: 1 }],
+        observacoes: `[Via WhatsApp] ${quantidade}x ${produtoEscolhido.nome}`,
+        itens: [{ produtoId: produtoEscolhido.id, quantidade }],
     };
 
     const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
@@ -526,21 +619,29 @@ async function criarPedidoPlaceholder(
             `Desculpe, *${cliente.nome}*, tivemos um problema ao registrar seu pedido. 😔\nPor favor, tente novamente.`,
         );
         console.error('[WhatsApp] Erro ao criar pedido:', erros);
+        await limparEstado(telefoneLimpo);
         return;
     }
+
+    await limparEstado(telefoneLimpo);
+
+    const valorFormatado = pedido.valorTotal != null
+        ? `R$ ${Number(pedido.valorTotal).toFixed(2)}`
+        : 'a calcular';
 
     await enviarMensagem(
         remoteJid,
         `✅ Pedido registrado com sucesso!\n\n` +
         `📋 *Pedido #${pedido.id}*\n` +
-        `📝 *Seu pedido:* ${textoPedido}\n\n` +
+        `🛒 *${quantidade}x ${produtoEscolhido.nome}*\n` +
+        `💰 *Valor Total:* ${valorFormatado}\n\n` +
         `Vamos preparar tudo com carinho! Você receberá atualizações por aqui. 😊`,
     );
 
-    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (ID: ${cliente.id}).`);
+    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (${quantidade}x ${produtoEscolhido.nome}).`);
 
     // Notificar administrador
-    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, textoPedido);
+    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, `${quantidade}x ${produtoEscolhido.nome}`);
 }
 
 // ─── Fluxo de Onboarding (novo cliente) ──────────────────────────────
@@ -633,15 +734,15 @@ async function processarOnboarding(
                 return null;
             }
 
-            // Onboarding concluído — limpar estado
-            await limparEstado(telefoneLimpo);
+            // Onboarding concluído — transitar para menu de quantidade
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
 
             await enviarMensagem(
                 remoteJid,
                 `Cadastro realizado com sucesso! 🎉\n\n` +
-                `*${nome}*, agora você pode fazer seu pedido.\n` +
-                `Me diga o que deseja pedir (ex: "50 coxinhas e 30 risoles"):`,
+                `*${nome}*, agora vamos montar seu pedido!`,
             );
+            await enviarMenuQuantidade(remoteJid, nome);
 
             console.log(`[WhatsApp] ✅ Cliente cadastrado: ${nome} (ID: ${novoCliente.id}).`);
             return novoCliente;
@@ -804,14 +905,14 @@ async function processarMenuPedidoAtivo(
 
         // ── Opção 4: Fazer um Novo Pedido ────────────────────────
         case '4': {
-            await definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_PEDIDO);
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
             await enviarMensagem(
                 remoteJid,
                 `Certo, *${cliente.nome}*! 🛒\n\n` +
                 `Seu pedido anterior (#${pedidoId}) continua em andamento.\n` +
-                `Me diga o que deseja pedir agora:\n` +
-                `_(ex: "50 coxinhas e 30 risoles")_`,
+                `Vamos montar seu novo pedido!`,
             );
+            await enviarMenuQuantidade(remoteJid, cliente.nome);
             console.log(`[WhatsApp] Opção 4: Cliente ${cliente.nome} iniciou novo pedido (pedido ativo #${pedidoId} mantido).`);
             return;
         }
@@ -910,10 +1011,10 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         }
 
         // ── 3. Verificar se há onboarding em andamento
-        //    IMPORTANTE: AGUARDANDO_PEDIDO não é onboarding — deve cair no fluxo de pedido (step 7).
+        //    IMPORTANTE: MENU_QUANTIDADE, MENU_PRODUTO e MENU_PEDIDO_ATIVO não são onboarding.
         const estadoAtual = await obterEstado(telefoneLimpo);
 
-        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.AGUARDANDO_PEDIDO && estadoAtual.etapa !== EtapaConversa.MENU_PEDIDO_ATIVO) {
+        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.MENU_QUANTIDADE && estadoAtual.etapa !== EtapaConversa.MENU_PRODUTO && estadoAtual.etapa !== EtapaConversa.MENU_PEDIDO_ATIVO) {
             // Cliente está no meio do cadastro — processar onboarding
             const clienteOnboarding = await processarOnboarding(remoteJid, texto, nomeContato, telefoneLimpo);
 
@@ -974,23 +1075,34 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
             return;
         }
 
-        // ── 8. Sem pedido ativo → verificar se está aguardando o texto do pedido
-        if (estadoAtual?.etapa === EtapaConversa.AGUARDANDO_PEDIDO) {
-            // Cliente já foi saudado, esta mensagem é o pedido
-            await limparEstado(telefoneLimpo);
-            await criarPedidoPlaceholder(cliente, texto, remoteJid);
+        // ── 8. Sem pedido ativo → verificar se está no menu de quantidade
+        if (estadoAtual?.etapa === EtapaConversa.MENU_QUANTIDADE) {
+            await processarMenuQuantidade(remoteJid, texto, cliente, telefoneLimpo);
             return;
         }
 
-        // ── 9. Cliente retornando sem pedido ativo → saudar e pedir o pedido
-        await definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_PEDIDO);
+        // ── 9. Sem pedido ativo → verificar se está no menu de produto
+        if (estadoAtual?.etapa === EtapaConversa.MENU_PRODUTO) {
+            const quantidade = estadoAtual.dados.quantidadeEscolhida;
+            if (!quantidade) {
+                // Estado corrompido — reiniciar fluxo
+                await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
+                await enviarMenuQuantidade(remoteJid, cliente.nome);
+                console.warn('[WhatsApp] Estado MENU_PRODUTO sem quantidadeEscolhida. Reiniciando fluxo.');
+                return;
+            }
+            await processarMenuProdutoEFinalizar(remoteJid, texto, cliente, telefoneLimpo, quantidade);
+            return;
+        }
+
+        // ── 10. Cliente retornando sem pedido ativo → saudar e mostrar menu de quantidade
+        await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
         await enviarMensagem(
             remoteJid,
-            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!\n\n` +
-            `O que deseja pedir hoje? 😊\n` +
-            `(ex: "50 coxinhas e 30 risoles")`,
+            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!`,
         );
-        console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Aguardando texto do pedido.`);
+        await enviarMenuQuantidade(remoteJid, cliente.nome);
+        console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Menu de quantidade enviado.`);
 
     } catch (error: unknown) {
         console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error instanceof Error ? error.message : error);

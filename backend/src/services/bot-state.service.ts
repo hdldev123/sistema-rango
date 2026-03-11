@@ -9,7 +9,9 @@
  * - INICIAL: Cliente não cadastrado; bot pedirá o nome.
  * - AGUARDANDO_NOME: Bot aguarda o nome completo do cliente.
  * - AGUARDANDO_ENDERECO: Bot aguarda o endereço de entrega.
- * - AGUARDANDO_PEDIDO: Cliente cadastrado; bot aguarda o texto do pedido.
+ * - MENU_QUANTIDADE: Bot exibe menu de quantidades e aguarda escolha.
+ * - MENU_PRODUTO: Bot exibe menu de produtos e aguarda escolha.
+ * - MENU_PEDIDO_ATIVO: Bot exibe menu de ações para pedido em aberto.
  *
  * Sessões com mais de 30 minutos de inatividade são tratadas como expiradas.
  */
@@ -23,7 +25,8 @@ export enum EtapaConversa {
     INICIAL = 'INICIAL',
     AGUARDANDO_NOME = 'AGUARDANDO_NOME',
     AGUARDANDO_ENDERECO = 'AGUARDANDO_ENDERECO',
-    AGUARDANDO_PEDIDO = 'AGUARDANDO_PEDIDO',
+    MENU_QUANTIDADE = 'MENU_QUANTIDADE',
+    MENU_PRODUTO = 'MENU_PRODUTO',
     MENU_PEDIDO_ATIVO = 'MENU_PEDIDO_ATIVO',
 }
 
@@ -33,6 +36,8 @@ export interface DadosOnboarding {
     endereco?: string;
     /** ID do pedido ativo — usado pelo menu interativo */
     pedidoAtivoId?: number;
+    /** Quantidade escolhida no menu de quantidades — carregada para o menu de produtos */
+    quantidadeEscolhida?: number;
 }
 
 /** Estado completo de uma conversa */
