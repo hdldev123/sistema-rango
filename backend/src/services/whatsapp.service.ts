@@ -9,11 +9,23 @@ import {
     definirEstado,
     limparEstado,
 } from './bot-state.service';
+import { getSocket, resolverJidParaEnvio } from './jid-resolver.service';
 
 // ─── Constantes ──────────────────────────────────────────────────────
 
-/** Número WhatsApp do administrador que recebe as notificações de pedido */
-const ADMIN_JID = '5532999269379@s.whatsapp.net';
+/**
+ * JID WhatsApp do administrador que recebe notificações de novos pedidos.
+ * Formato esperado: "5511999999999@s.whatsapp.net"
+ * Configurado em WHATSAPP_ADMIN_JID no .env.
+ */
+const ADMIN_JID = process.env.WHATSAPP_ADMIN_JID ?? null;
+
+if (!ADMIN_JID) {
+    console.error(
+        '[WhatsApp] ⚠️  WHATSAPP_ADMIN_JID não configurado no .env. ' +
+        'Notificações de novos pedidos ao administrador estão DESATIVADAS.',
+    );
+}
 
 // ─── Persistência de JID (banco de dados) ────────────────────────────
 
@@ -106,7 +118,7 @@ async function logarMensagem(
 // ─── Tipos internos ──────────────────────────────────────────────────
 
 /** Payload simplificado vindo do Baileys (evento messages.upsert) */
-interface WhatsAppPayload {
+export interface WhatsAppPayload {
     event?: string;
     instance?: string;
     data?: {
@@ -134,6 +146,22 @@ interface WhatsAppPayload {
     };
 }
 
+export interface ClienteWhatsappBanco {
+    id: number;
+    nome: string;
+    telefone: string;
+    endereco: string | null;
+    whatsapp_jid: string | null;
+    whatsapp_lid: string | null;
+}
+
+export interface PedidoAtivoBanco {
+    id: number;
+    status: number;
+    data_criacao: string;
+    observacoes: string | null;
+}
+
 // ─── Utilitários ─────────────────────────────────────────────────────
 
 /**
@@ -144,27 +172,14 @@ interface WhatsAppPayload {
  * @param text - Conteúdo da mensagem
  */
 async function enviarMensagem(jid: string, text: string): Promise<void> {
-    // Importação lazy para evitar dependência circular com baileys.service.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSocket, resolverJidParaEnvio } = require('./baileys.service') as {
-        getSocket: () => WASocket | null;
-        resolverJidParaEnvio: (jid: string) => string;
-    };
     const sock = getSocket();
     if (!sock) {
         console.warn('[WhatsApp] Socket não disponível. Mensagem não enviada para', jid);
         return;
     }
 
-    // @lid JIDs NÃO são entregáveis — converter para @s.whatsapp.net
+    // @lid JIDs NÃO são entregáveis em novos contatos — tentar converter para @s.whatsapp.net
     const jidEnvio = resolverJidParaEnvio(jid);
-
-    if (jidEnvio.endsWith('@lid')) {
-        console.warn(
-            `[WhatsApp] ⚠️ JID @lid não resolvido: ${jid}. ` +
-            `Mensagem pode não ser entregue. Aguardando sincronização de contatos.`,
-        );
-    }
 
     await sock.sendMessage(jidEnvio, { text });
     console.log(`[WhatsApp] 📤 Mensagem enviada para ${jidEnvio}${jidEnvio !== jid ? ` (lid: ${jid})` : ''}`);
@@ -236,46 +251,55 @@ export function ehMensagemValida(payload: WhatsAppPayload): boolean {
 }
 
 /**
- * Busca um cliente no Supabase comparando o telefone normalizado.
- * Retorna o registro do cliente ou `null` se não encontrado.
+ * Busca um cliente no Supabase comparando o telefone normalizado ou whatsapp_lid.
+ *
+ * Variantes de telefone cobertas (mesma lógica do código anterior, agora no banco):
+ *   - telBanco === telefoneLimpo          → número idêntico
+ *   - telBanco === `55${telefoneLimpo}`   → banco tem DDI, JID não tem
+ *   - telefoneLimpo === `55${telBanco}`   → JID tem DDI, banco não tem
+ *
+ * A query `.or()` + `.limit(1).maybeSingle()` substitui o full table scan anterior,
+ * reduzindo o trabalho de O(N clientes) em JS para uma busca indexada no Postgres.
  */
-async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<any | null> {
-    const { data: clientes, error } = await supabase
-        .from('clientes')
-        .select('*');
+async function buscarClientePorTelefone(telefoneLimpo: string, whatsappLid?: string | null): Promise<ClienteWhatsappBanco | null> {
+    // Monta os filtros de telefone cobrindo as três variantes de normalização
+    const telComDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo : `55${telefoneLimpo}`;
+    const telSemDdi = telefoneLimpo.startsWith('55') ? telefoneLimpo.slice(2) : telefoneLimpo;
 
-    if (error || !clientes) {
-        console.error('[WhatsApp] Erro ao buscar clientes:', error?.message);
+    // Filtros: telefone exato | com DDI | sem DDI | lid (fallback)
+    const filtros = [
+        `telefone.eq.${telefoneLimpo}`,
+        `telefone.eq.${telComDdi}`,
+        `telefone.eq.${telSemDdi}`,
+        ...(whatsappLid ? [`whatsapp_lid.eq.${whatsappLid}`] : []),
+    ].join(',');
+
+    const { data, error } = await supabase
+        .from('clientes')
+        .select('id, nome, telefone, endereco, whatsapp_jid, whatsapp_lid')
+        .or(filtros)
+        .limit(1)
+        .maybeSingle();
+
+    if (error) {
+        console.error('[WhatsApp] Erro ao buscar cliente por telefone:', error.message);
         return null;
     }
 
-    // Prioridade 1: buscar por telefone normalizado
-    const porTelefone = clientes.find((c: any) => {
-        const telBanco = (c.telefone || '').replace(/\D/g, '');
-        return telBanco === telefoneLimpo
-            || telBanco === `55${telefoneLimpo}`
-            || `55${telBanco}` === telefoneLimpo;
-    });
-    if (porTelefone) return porTelefone;
-
-    // Prioridade 2: buscar por whatsapp_lid (quando @lid não pôde ser resolvido para telefone real)
-    if (whatsappLid) {
-        const porLid = clientes.find((c: any) => c.whatsapp_lid === whatsappLid);
-        if (porLid) {
-            console.log(`[WhatsApp] Cliente encontrado via whatsapp_lid: ${whatsappLid}`);
-            return porLid;
-        }
+    if (data && whatsappLid && data.whatsapp_lid === whatsappLid) {
+        console.log(`[WhatsApp] Cliente encontrado via whatsapp_lid: ${whatsappLid}`);
     }
 
-    return null;
+    return data;
 }
+
 
 /**
  * Busca o pedido ativo mais recente de um cliente.
  * Pedido ativo = qualquer status EXCETO Entregue (5) e Cancelado (6).
  * Retorna o registro ou `null` se não existir pedido em aberto.
  */
-async function buscarPedidoAtivo(clienteId: number): Promise<any | null> {
+async function buscarPedidoAtivo(clienteId: number): Promise<PedidoAtivoBanco | null> {
     const { data, error } = await supabase
         .from('pedidos')
         .select('id, status, data_criacao, observacoes')
@@ -308,10 +332,10 @@ function telefoneParaJid(telefone: string): string {
  */
 function labelStatusParaCliente(status: number): string {
     const emojis: Record<number, string> = {
-        [StatusPedido.Pendente]:   '⏳ Pendente — aguardando início da produção',
+        [StatusPedido.Pendente]: '⏳ Pendente — aguardando início da produção',
         [StatusPedido.EmProducao]: '👨‍🍳 Em Produção — seu pedido está sendo preparado',
-        [StatusPedido.Pronto]:     '✅ Pronto — seu pedido está pronto para entrega',
-        [StatusPedido.EmEntrega]:  '🛵 A Caminho — seu pedido está a caminho!',
+        [StatusPedido.Pronto]: '✅ Pronto — seu pedido está pronto para entrega',
+        [StatusPedido.EmEntrega]: '🛵 A Caminho — seu pedido está a caminho!',
     };
     return emojis[status] ?? StatusPedidoLabel[status as StatusPedido] ?? 'Em andamento';
 }
@@ -394,8 +418,8 @@ export async function notificarClienteStatusPedido(pedido: PedidoDto): Promise<v
     try {
         await enviarMensagem(jid, mensagem);
         console.log(`[WhatsApp] ✅ Cliente ${pedido.clienteNome} notificado sobre pedido #${pedido.id} (${statusLabel}).`);
-    } catch (err: any) {
-        console.error(`[WhatsApp] Falha ao notificar cliente sobre pedido #${pedido.id}:`, err.message);
+    } catch (error: unknown) {
+        console.error(`[WhatsApp] Falha ao notificar cliente sobre pedido #${pedido.id}:`, error instanceof Error ? error.message : error);
     }
 }
 
@@ -411,7 +435,7 @@ async function cadastrarCliente(
     nome: string,
     telefone: string,
     endereco: string,
-): Promise<any | null> {
+): Promise<ClienteWhatsappBanco | null> {
     const { data, error } = await supabase
         .from('clientes')
         .insert({ nome, telefone, endereco })
@@ -437,6 +461,11 @@ async function notificarAdministrador(
     endereco: string | null,
     textoPedido: string,
 ): Promise<void> {
+    if (!ADMIN_JID) {
+        console.warn('[WhatsApp] Notificação ao administrador ignorada — WHATSAPP_ADMIN_JID não configurado.');
+        return;
+    }
+
     const mensagem =
         `📋 *Novo Pedido via WhatsApp*\n\n` +
         `👤 *Cliente:* ${clienteNome}\n` +
@@ -446,47 +475,140 @@ async function notificarAdministrador(
     try {
         await enviarMensagem(ADMIN_JID, mensagem);
         console.log('[WhatsApp] ✅ Notificação enviada ao administrador.');
-    } catch (err: any) {
-        console.error('[WhatsApp] Falha ao notificar administrador:', err.message);
+    } catch (error: unknown) {
+        console.error('[WhatsApp] Falha ao notificar administrador:', error instanceof Error ? error.message : error);
     }
 }
 
-// ─── Criação de Pedido via WhatsApp ──────────────────────────────────
+// ─── Menus de Criação de Pedido (Quantidade → Produto) ──────────────
+
+/** Opções fixas de quantidade mínima */
+const OPCOES_QUANTIDADE: readonly number[] = [100, 300, 500, 1000];
 
 /**
- * Cria um pedido placeholder para o cliente.
- *
- * Como o bot ainda não interpreta as quantidades, cria o pedido
- * com o primeiro produto ativo (quantidade 1) e salva o texto
- * original do cliente nas observações para tratamento manual.
+ * Envia o menu numérico de quantidades.
  */
-async function criarPedidoPlaceholder(
-    cliente: { id: number; nome: string; endereco?: string | null },
-    textoPedido: string,
-    remoteJid: string,
-): Promise<void> {
-    // Buscar primeiro produto ativo para usar como item placeholder
-    const { data: produto } = await supabase
-        .from('produtos')
-        .select('id, nome')
-        .eq('ativo', true)
-        .order('id', { ascending: true })
-        .limit(1)
-        .maybeSingle();
+async function enviarMenuQuantidade(remoteJid: string, nomeCliente: string): Promise<void> {
+    const linhas = OPCOES_QUANTIDADE.map((q, i) => `*[${i + 1}]* ${q} unidades`).join('\n');
 
-    if (!produto) {
+    await enviarMensagem(
+        remoteJid,
+        `Ok, *${nomeCliente}*! Vamos montar seu pedido. 🛒\n\n` +
+        `Primeiro, escolha a *quantidade*:\n\n` +
+        `${linhas}\n\n` +
+        `_Responda com o número da opção desejada._`,
+    );
+}
+
+/**
+ * Processa a resposta do menu de quantidade.
+ * Valida o input (1-4) e transita para MENU_PRODUTO.
+ */
+async function processarMenuQuantidade(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+): Promise<void> {
+    const opcao = parseInt(texto.trim(), 10);
+
+    if (isNaN(opcao) || opcao < 1 || opcao > OPCOES_QUANTIDADE.length) {
         await enviarMensagem(
             remoteJid,
-            `Desculpe, *${cliente.nome}*! Estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+            `Hmm, não entendi. 🤔\nPor favor, responda apenas com o *número* da opção:\n\n` +
+            OPCOES_QUANTIDADE.map((q, i) => `*[${i + 1}]* ${q} unidades`).join('\n'),
         );
-        console.warn('[WhatsApp] Nenhum produto ativo encontrado para criar pedido.');
+        return; // Mantém no MENU_QUANTIDADE
+    }
+
+    const quantidade = OPCOES_QUANTIDADE[opcao - 1];
+
+    // Salvar quantidade na sessão e transitar para MENU_PRODUTO
+    await definirEstado(telefoneLimpo, EtapaConversa.MENU_PRODUTO, { quantidadeEscolhida: quantidade });
+    await enviarMenuProduto(remoteJid, quantidade);
+    console.log(`[WhatsApp] Quantidade ${quantidade} selecionada por ${cliente.nome}.`);
+}
+
+/**
+ * Busca produtos ativos do banco e envia menu dinâmico.
+ */
+async function enviarMenuProduto(remoteJid: string, quantidade: number): Promise<void> {
+    const { data: produtos, error } = await supabase
+        .from('produtos')
+        .select('id, nome, preco')
+        .eq('ativo', true)
+        .order('nome', { ascending: true });
+
+    if (error || !produtos || produtos.length === 0) {
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+        );
         return;
     }
 
+    const linhas = produtos.map((p, i) =>
+        `*[${i + 1}]* ${p.nome} — R$ ${Number(p.preco).toFixed(2)}/un`,
+    ).join('\n');
+
+    await enviarMensagem(
+        remoteJid,
+        `Ótimo! *${quantidade} unidades* selecionadas. 📦\n\n` +
+        `Agora escolha o *produto*:\n\n` +
+        `${linhas}\n\n` +
+        `_Responda com o número da opção desejada._`,
+    );
+}
+
+/**
+ * Processa a escolha de produto e finaliza o pedido.
+ * Valida o input, chama `pedidoService.criarAsync` com produtoId e quantidade exatos.
+ */
+async function processarMenuProdutoEFinalizar(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+    quantidade: number,
+): Promise<void> {
+    // Buscar produtos ativos para validar o input
+    const { data: produtos, error: dbErr } = await supabase
+        .from('produtos')
+        .select('id, nome, preco')
+        .eq('ativo', true)
+        .order('nome', { ascending: true });
+
+    if (dbErr || !produtos || produtos.length === 0) {
+        await limparEstado(telefoneLimpo);
+        await enviarMensagem(
+            remoteJid,
+            `Desculpe, estamos sem produtos disponíveis no momento. 😔\nTente novamente mais tarde.`,
+        );
+        return;
+    }
+
+    const opcao = parseInt(texto.trim(), 10);
+
+    if (isNaN(opcao) || opcao < 1 || opcao > produtos.length) {
+        const linhas = produtos.map((p, i) =>
+            `*[${i + 1}]* ${p.nome} — R$ ${Number(p.preco).toFixed(2)}/un`,
+        ).join('\n');
+
+        await enviarMensagem(
+            remoteJid,
+            `Hmm, não entendi. 🤔\nPor favor, responda apenas com o *número* do produto:\n\n` +
+            `${linhas}`,
+        );
+        return; // Mantém no MENU_PRODUTO
+    }
+
+    const produtoEscolhido = produtos[opcao - 1];
+
+    // Criar pedido com valores exatos
     const pedidoInput = {
         clienteId: cliente.id,
-        observacoes: `[Via WhatsApp] ${textoPedido}`,
-        itens: [{ produtoId: produto.id, quantidade: 1 }],
+        observacoes: `[Via WhatsApp] ${quantidade}x ${produtoEscolhido.nome}`,
+        itens: [{ produtoId: produtoEscolhido.id, quantidade }],
     };
 
     const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
@@ -497,21 +619,29 @@ async function criarPedidoPlaceholder(
             `Desculpe, *${cliente.nome}*, tivemos um problema ao registrar seu pedido. 😔\nPor favor, tente novamente.`,
         );
         console.error('[WhatsApp] Erro ao criar pedido:', erros);
+        await limparEstado(telefoneLimpo);
         return;
     }
+
+    await limparEstado(telefoneLimpo);
+
+    const valorFormatado = pedido.valorTotal != null
+        ? `R$ ${Number(pedido.valorTotal).toFixed(2)}`
+        : 'a calcular';
 
     await enviarMensagem(
         remoteJid,
         `✅ Pedido registrado com sucesso!\n\n` +
         `📋 *Pedido #${pedido.id}*\n` +
-        `📝 *Seu pedido:* ${textoPedido}\n\n` +
+        `🛒 *${quantidade}x ${produtoEscolhido.nome}*\n` +
+        `💰 *Valor Total:* ${valorFormatado}\n\n` +
         `Vamos preparar tudo com carinho! Você receberá atualizações por aqui. 😊`,
     );
 
-    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (ID: ${cliente.id}).`);
+    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (${quantidade}x ${produtoEscolhido.nome}).`);
 
     // Notificar administrador
-    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, textoPedido);
+    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, `${quantidade}x ${produtoEscolhido.nome}`);
 }
 
 // ─── Fluxo de Onboarding (novo cliente) ──────────────────────────────
@@ -534,7 +664,7 @@ async function processarOnboarding(
     texto: string,
     nomeContato: string,
     telefoneLimpo: string,
-): Promise<any | null> {
+): Promise<ClienteWhatsappBanco | null> {
     const estado = await obterEstado(telefoneLimpo);
     const etapaAtual = estado?.etapa ?? EtapaConversa.INICIAL;
 
@@ -604,15 +734,15 @@ async function processarOnboarding(
                 return null;
             }
 
-            // Onboarding concluído — limpar estado
-            await limparEstado(telefoneLimpo);
+            // Onboarding concluído — transitar para menu de quantidade
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
 
             await enviarMensagem(
                 remoteJid,
                 `Cadastro realizado com sucesso! 🎉\n\n` +
-                `*${nome}*, agora você pode fazer seu pedido.\n` +
-                `Me diga o que deseja pedir (ex: "50 coxinhas e 30 risoles"):`,
+                `*${nome}*, agora vamos montar seu pedido!`,
             );
+            await enviarMenuQuantidade(remoteJid, nome);
 
             console.log(`[WhatsApp] ✅ Cliente cadastrado: ${nome} (ID: ${novoCliente.id}).`);
             return novoCliente;
@@ -621,6 +751,199 @@ async function processarOnboarding(
         default:
             await limparEstado(telefoneLimpo);
             return null;
+    }
+}
+
+// ─── Menu Interativo de Pedido Ativo ─────────────────────────────────
+
+/**
+ * Monta e envia o menu numérico para clientes com pedido ativo.
+ */
+async function enviarMenuPedidoAtivo(
+    remoteJid: string,
+    nomeCliente: string,
+    pedidoAtivo: PedidoAtivoBanco,
+): Promise<void> {
+    const statusLabel = labelStatusParaCliente(pedidoAtivo.status);
+
+    await enviarMensagem(
+        remoteJid,
+        `Olá, *${nomeCliente}*! 👋\n\n` +
+        `Você tem um pedido em aberto:\n` +
+        `📦 *Pedido #${pedidoAtivo.id}*\n` +
+        `📌 *Status:* ${statusLabel}\n\n` +
+        `O que deseja fazer?\n\n` +
+        `*[1]* 📋 Ver Status Atual\n` +
+        `*[2]* ❌ Cancelar Pedido\n` +
+        `*[3]* ✏️ Editar Pedido\n` +
+        `*[4]* 🆕 Fazer um Novo Pedido\n\n` +
+        `_Responda com o número da opção desejada._`,
+    );
+}
+
+/**
+ * Processa a resposta numérica do menu de pedido ativo.
+ *
+ * Valida o input e executa a ação correspondente.
+ * Se o input for inválido, repete o menu sem alterar o estado.
+ */
+async function processarMenuPedidoAtivo(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+    pedidoId: number,
+): Promise<void> {
+    const opcao = texto.trim();
+
+    switch (opcao) {
+        // ── Opção 1: Ver Status Atual ────────────────────────────
+        case '1': {
+            const pedido = await buscarPedidoAtivo(cliente.id);
+
+            if (!pedido || pedido.id !== pedidoId) {
+                await limparEstado(telefoneLimpo);
+                await enviarMensagem(
+                    remoteJid,
+                    `O pedido #${pedidoId} não está mais ativo. 🤔\n` +
+                    `Envie uma mensagem para começar um novo pedido!`,
+                );
+                return;
+            }
+
+            const statusLabel = labelStatusParaCliente(pedido.status);
+            await enviarMensagem(
+                remoteJid,
+                `📦 *Pedido #${pedido.id}*\n` +
+                `📌 *Status:* ${statusLabel}\n` +
+                (pedido.observacoes ? `📝 *Obs:* ${pedido.observacoes}\n` : '') +
+                `\n_Envie outro número para escolher uma opção:_\n\n` +
+                `*[1]* 📋 Ver Status Atual\n` +
+                `*[2]* ❌ Cancelar Pedido\n` +
+                `*[3]* ✏️ Editar Pedido\n` +
+                `*[4]* 🆕 Fazer um Novo Pedido`,
+            );
+            // Manter no estado MENU_PEDIDO_ATIVO
+            console.log(`[WhatsApp] Opção 1: Status do pedido #${pedido.id} enviado para ${cliente.nome}.`);
+            return;
+        }
+
+        // ── Opção 2: Cancelar Pedido (com validação de segurança) ─
+        case '2': {
+            // Re-buscar pedido para garantir integridade
+            const { data: pedidoDb, error } = await supabase
+                .from('pedidos')
+                .select('id, cliente_id, status')
+                .eq('id', pedidoId)
+                .single();
+
+            if (error || !pedidoDb) {
+                await limparEstado(telefoneLimpo);
+                await enviarMensagem(
+                    remoteJid,
+                    `Não foi possível encontrar o pedido #${pedidoId}. 😔\n` +
+                    `Envie uma mensagem para começar um novo pedido!`,
+                );
+                console.warn(`[WhatsApp] Cancelar: pedido #${pedidoId} não encontrado no banco.`);
+                return;
+            }
+
+            // Segurança: validar que o pedido pertence ao cliente
+            if (pedidoDb.cliente_id !== cliente.id) {
+                await limparEstado(telefoneLimpo);
+                await enviarMensagem(
+                    remoteJid,
+                    `Desculpe, não foi possível processar esta solicitação. 🔒\n` +
+                    `Envie uma mensagem para começar um novo pedido!`,
+                );
+                console.error(`[WhatsApp] ⚠️ SEGURANÇA: Cliente ${cliente.id} tentou cancelar pedido #${pedidoId} que pertence ao cliente ${pedidoDb.cliente_id}.`);
+                return;
+            }
+
+            // Validar que o status ainda é ativo (1-4)
+            const statusesAtivos = [
+                StatusPedido.Pendente,
+                StatusPedido.EmProducao,
+                StatusPedido.Pronto,
+                StatusPedido.EmEntrega,
+            ];
+            if (!statusesAtivos.includes(pedidoDb.status)) {
+                await limparEstado(telefoneLimpo);
+                await enviarMensagem(
+                    remoteJid,
+                    `O pedido #${pedidoId} já foi finalizado e não pode ser cancelado. 🤔\n` +
+                    `Envie uma mensagem para começar um novo pedido!`,
+                );
+                return;
+            }
+
+            // Executar cancelamento via service (reusa lógica existente)
+            await pedidoService.atualizarStatusAsync(pedidoId, { status: StatusPedido.Cancelado });
+
+            await limparEstado(telefoneLimpo);
+            await enviarMensagem(
+                remoteJid,
+                `✅ Pedido #${pedidoId} foi *cancelado* com sucesso.\n\n` +
+                `Sempre que quiser, é só mandar uma mensagem para fazer um novo pedido! 😊`,
+            );
+            console.log(`[WhatsApp] Pedido #${pedidoId} cancelado pelo cliente ${cliente.nome} (ID: ${cliente.id}).`);
+            return;
+        }
+
+        // ── Opção 3: Editar Pedido (MVP → direcionar para atendente) ─
+        case '3': {
+            await limparEstado(telefoneLimpo);
+            await enviarMensagem(
+                remoteJid,
+                `Para editar seu pedido #${pedidoId}, entre em contato com um de nossos atendentes. 📞\n\n` +
+                `Você pode ligar ou enviar mensagem diretamente para o número da loja.\n` +
+                `Desculpe o inconveniente! 🙏`,
+            );
+            console.log(`[WhatsApp] Opção 3: Cliente ${cliente.nome} direcionado a atendente para editar pedido #${pedidoId}.`);
+            return;
+        }
+
+        // ── Opção 4: Fazer um Novo Pedido ────────────────────────
+        case '4': {
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
+            await enviarMensagem(
+                remoteJid,
+                `Certo, *${cliente.nome}*! 🛒\n\n` +
+                `Seu pedido anterior (#${pedidoId}) continua em andamento.\n` +
+                `Vamos montar seu novo pedido!`,
+            );
+            await enviarMenuQuantidade(remoteJid, cliente.nome);
+            console.log(`[WhatsApp] Opção 4: Cliente ${cliente.nome} iniciou novo pedido (pedido ativo #${pedidoId} mantido).`);
+            return;
+        }
+
+        // ── Input inválido → repetir menu ────────────────────────
+        default: {
+            const pedido = await buscarPedidoAtivo(cliente.id);
+
+            if (!pedido) {
+                await limparEstado(telefoneLimpo);
+                await enviarMensagem(
+                    remoteJid,
+                    `Parece que seu pedido já foi finalizado! 🎉\n` +
+                    `Envie uma mensagem para fazer um novo pedido. 😊`,
+                );
+                return;
+            }
+
+            await enviarMensagem(
+                remoteJid,
+                `Hmm, não entendi. 🤔\n` +
+                `Por favor, responda apenas com o *número* da opção desejada:\n\n` +
+                `*[1]* 📋 Ver Status Atual\n` +
+                `*[2]* ❌ Cancelar Pedido\n` +
+                `*[3]* ✏️ Editar Pedido\n` +
+                `*[4]* 🆕 Fazer um Novo Pedido`,
+            );
+            // Manter no estado MENU_PEDIDO_ATIVO (não altera nada)
+            console.log(`[WhatsApp] Input inválido "${opcao}" de ${cliente.nome}. Menu repetido.`);
+            return;
+        }
     }
 }
 
@@ -659,10 +982,6 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         // ── 2. Resolver @lid e normalizar telefone
         //    Tenta resolver o @lid para @s.whatsapp.net usando o mapa de contatos.
         //    Se não conseguir, usamos o phoneJid como recebido (pode ser @lid).
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const { resolverJidParaEnvio } = require('./baileys.service') as {
-            resolverJidParaEnvio: (jid: string) => string;
-        };
         const phoneJidResolvido = resolverJidParaEnvio(phoneJid);
         const telefoneLimpo = limparTelefone(phoneJidResolvido);
 
@@ -692,82 +1011,100 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         }
 
         // ── 3. Verificar se há onboarding em andamento
-        //    IMPORTANTE: AGUARDANDO_PEDIDO não é onboarding — deve cair no fluxo de pedido (step 7).
+        //    IMPORTANTE: MENU_QUANTIDADE, MENU_PRODUTO e MENU_PEDIDO_ATIVO não são onboarding.
         const estadoAtual = await obterEstado(telefoneLimpo);
 
-        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.AGUARDANDO_PEDIDO) {
+        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.MENU_QUANTIDADE && estadoAtual.etapa !== EtapaConversa.MENU_PRODUTO && estadoAtual.etapa !== EtapaConversa.MENU_PEDIDO_ATIVO) {
             // Cliente está no meio do cadastro — processar onboarding
             const clienteOnboarding = await processarOnboarding(remoteJid, texto, nomeContato, telefoneLimpo);
 
             if (!clienteOnboarding) {
                 // Onboarding ainda em andamento; aguardando próxima resposta
                 // Logar mensagem inbound sem clienteId (ainda não cadastrado)
-                logarMensagem(null, remoteJid, texto, 'INBOUND').catch(() => {});
+                logarMensagem(null, remoteJid, texto, 'INBOUND').catch(() => { });
                 return;
             }
 
             // Onboarding acabou de ser concluído, mas a mensagem atual era o endereço.
             // O próximo texto do cliente será o pedido de fato.
-            logarMensagem(clienteOnboarding.id, remoteJid, texto, 'INBOUND').catch(() => {});
+            logarMensagem(clienteOnboarding.id, remoteJid, texto, 'INBOUND').catch(() => { });
             return;
         }
 
         // ── 4. Buscar cliente cadastrado (por telefone ou por whatsapp_lid como fallback)
-        let cliente = await buscarClientePorTelefone(telefoneLimpo, whatsappLid);
+        const cliente = await buscarClientePorTelefone(telefoneLimpo, whatsappLid);
 
         // ── 5. Cliente não existe → iniciar onboarding
         if (!cliente) {
             await processarOnboarding(remoteJid, texto, nomeContato, telefoneLimpo);
-            logarMensagem(null, remoteJid, texto, 'INBOUND').catch(() => {});
+            logarMensagem(null, remoteJid, texto, 'INBOUND').catch(() => { });
             return;
         }
 
         console.log(`[WhatsApp] Cliente encontrado: ${cliente.nome} (ID: ${cliente.id})`);
 
         // Persistir JIDs no banco agora que sabemos o clienteId
-        salvarJidCliente(cliente.id, telefoneLimpo, whatsappJid, whatsappLid).catch(() => {});
+        salvarJidCliente(cliente.id, telefoneLimpo, whatsappJid, whatsappLid).catch(() => { });
 
         // Logar mensagem inbound
-        logarMensagem(cliente.id, remoteJid, texto, 'INBOUND').catch(() => {});
+        logarMensagem(cliente.id, remoteJid, texto, 'INBOUND').catch(() => { });
 
-        // ── 6. Verificar se já existe um pedido ativo para este cliente
+        // ── 6. Verificar se está no menu de pedido ativo
+        if (estadoAtual?.etapa === EtapaConversa.MENU_PEDIDO_ATIVO) {
+            const pedidoIdMenu = estadoAtual.dados.pedidoAtivoId;
+            if (pedidoIdMenu) {
+                await processarMenuPedidoAtivo(remoteJid, texto, cliente, telefoneLimpo, pedidoIdMenu);
+            } else {
+                // Estado corrompido — limpar e reprocessar
+                await limparEstado(telefoneLimpo);
+                console.warn('[WhatsApp] Estado MENU_PEDIDO_ATIVO sem pedidoAtivoId. Limpando sessão.');
+            }
+            return;
+        }
+
+        // ── 7. Verificar se já existe um pedido ativo para este cliente
         const pedidoAtivo = await buscarPedidoAtivo(cliente.id);
 
         if (pedidoAtivo) {
-            const statusLabel = labelStatusParaCliente(pedidoAtivo.status);
-            await enviarMensagem(
-                remoteJid,
-                `Olá, *${cliente.nome}*! 👋\n\n` +
-                `Você já tem um pedido em aberto:\n` +
-                `📦 *Pedido #${pedidoAtivo.id}*\n` +
-                `📌 *Status:* ${statusLabel}\n\n` +
-                `Assim que seu pedido for entregue, você poderá fazer um novo pedido. 😊`,
-            );
-            console.log(`[WhatsApp] Cliente ${cliente.nome} já tem pedido ativo #${pedidoAtivo.id} (status: ${pedidoAtivo.status}). Ignorando novo pedido.`);
+            // Salvar estado e enviar menu interativo
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_PEDIDO_ATIVO, {
+                pedidoAtivoId: pedidoAtivo.id,
+            });
+            await enviarMenuPedidoAtivo(remoteJid, cliente.nome, pedidoAtivo);
+            console.log(`[WhatsApp] Menu de pedido ativo enviado para ${cliente.nome} (Pedido #${pedidoAtivo.id}).`);
             return;
         }
 
-        // ── 7. Sem pedido ativo → verificar se está aguardando o texto do pedido
-        const estadoPedido = await obterEstado(telefoneLimpo);
-
-        if (estadoPedido?.etapa === EtapaConversa.AGUARDANDO_PEDIDO) {
-            // Cliente já foi saudado, esta mensagem é o pedido
-            await limparEstado(telefoneLimpo);
-            await criarPedidoPlaceholder(cliente, texto, remoteJid);
+        // ── 8. Sem pedido ativo → verificar se está no menu de quantidade
+        if (estadoAtual?.etapa === EtapaConversa.MENU_QUANTIDADE) {
+            await processarMenuQuantidade(remoteJid, texto, cliente, telefoneLimpo);
             return;
         }
 
-        // ── 8. Cliente retornando sem pedido ativo → saudar e pedir o pedido
-        await definirEstado(telefoneLimpo, EtapaConversa.AGUARDANDO_PEDIDO);
+        // ── 9. Sem pedido ativo → verificar se está no menu de produto
+        if (estadoAtual?.etapa === EtapaConversa.MENU_PRODUTO) {
+            const quantidade = estadoAtual.dados.quantidadeEscolhida;
+            if (!quantidade) {
+                // Estado corrompido — reiniciar fluxo
+                await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
+                await enviarMenuQuantidade(remoteJid, cliente.nome);
+                console.warn('[WhatsApp] Estado MENU_PRODUTO sem quantidadeEscolhida. Reiniciando fluxo.');
+                return;
+            }
+            await processarMenuProdutoEFinalizar(remoteJid, texto, cliente, telefoneLimpo, quantidade);
+            return;
+        }
+
+        // ── 10. Cliente retornando sem pedido ativo → saudar e mostrar menu de quantidade
+        await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
         await enviarMensagem(
             remoteJid,
-            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!\n\n` +
-            `O que deseja pedir hoje? 😊\n` +
-            `(ex: "50 coxinhas e 30 risoles")`,
+            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!`,
         );
-        console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Aguardando texto do pedido.`);
+        await enviarMenuQuantidade(remoteJid, cliente.nome);
+        console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Menu de quantidade enviado.`);
 
-    } catch (error: any) {
-        console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error.message);
+    } catch (error: unknown) {
+        console.error('[WhatsApp] Erro inesperado ao processar mensagem:', error instanceof Error ? error.message : error);
     }
 }

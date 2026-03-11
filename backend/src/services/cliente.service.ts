@@ -53,7 +53,11 @@ export async function obterPorIdAsync(id: number): Promise<ClienteDto | null> {
     .eq('id', id)
     .single();
 
-  if (error || !cliente) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao obter cliente: ${error.message}`);
+  }
+  if (!cliente) return null;
   return mapToDto(cliente);
 }
 
@@ -104,7 +108,10 @@ export async function atualizarAsync(
     })
     .eq('id', id);
 
-  if (error) return null;
+  if (error) {
+    if (error.code === 'PGRST116') return null;
+    throw new Error(`Erro ao atualizar cliente: ${error.message}`);
+  }
   return obterPorIdAsync(id);
 }
 
@@ -124,12 +131,16 @@ export async function excluirAsync(
   }
 
   // Verificar se tem pedidos vinculados
-  const { count } = await supabase
+  const { count, error: countError } = await supabase
     .from('pedidos')
     .select('id', { count: 'exact', head: true })
     .eq('cliente_id', id);
 
-  if (count && count > 0) {
+  if (countError) {
+    throw new Error(`Erro ao verificar pedidos: ${countError.message}`);
+  }
+
+  if (count !== null && count > 0) {
     return {
       sucesso: false,
       mensagemErro: 'Não é possível excluir o cliente pois existem pedidos vinculados.',
