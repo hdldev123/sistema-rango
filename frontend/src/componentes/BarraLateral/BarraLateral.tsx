@@ -16,7 +16,7 @@ interface MenuItem {
 const menuItens: MenuItem[] = [
   { icone: <FiHome />, texto: "Dashboard", para: "/", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
   { icone: <FiClipboard />, texto: "Pedidos", para: "/pedidos", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
-  { icone: <FiXCircle />, texto: "Pedidos Cancelados", para: "/pedidos-cancelados", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
+  { icone: <FiXCircle className="text-erro" />, texto: "Pedidos Cancelados", para: "/pedidos-cancelados", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
   { icone: <FiUsers />, texto: "Clientes", para: "/clientes", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
   { icone: <FiBox />, texto: "Produtos", para: "/produtos", papeis: ['ADMINISTRADOR', 'ATENDENTE'] },
   { icone: <FiUser />, texto: "Usuários", para: "/usuarios", papeis: ['ADMINISTRADOR'] },
@@ -37,7 +37,7 @@ const BarraLateral: React.FC = () => {
       <div className="border-b border-grafite-200 px-6 py-5 text-center">
         <img
           src="/logo.png"
-          alt="X Salgados"
+          alt="Rangô"
           className="mx-auto h-20 w-auto object-contain"
         />
       </div>

@@ -353,7 +353,7 @@ function obterMensagemComplementarStatus(status: StatusPedido): string {
             return 'O entregador está a caminho! Fique de olho. 🛵';
         case StatusPedido.Entregue:
             return (
-                'Pedido entregue! Obrigado por escolher a *X Salgados*! 🧡\n\n' +
+                'Pedido entregue! Obrigado por escolher a *Rangô*! 🧡\n\n' +
                 'Qualquer hora pode fazer um novo pedido. 😊'
             );
         default:
@@ -675,7 +675,7 @@ async function processarOnboarding(
 
             await enviarMensagem(
                 remoteJid,
-                `Olá! 👋 Bem-vindo(a) à *X Salgados*!\n\n` +
+                `Olá! 👋 Bem-vindo(a) à *Rangô*!\n\n` +
                 `Ainda não temos seu cadastro. Vamos resolver isso rapidinho!\n\n` +
                 `Por favor, me diga o seu *nome completo*:`,
             );
@@ -1093,7 +1093,7 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
         await enviarMensagem(
             remoteJid,
-            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *X Salgados*!`,
+            `Olá, *${cliente.nome}*! 👋 Bem-vindo(a) de volta à *Rangô*!`,
         );
         await enviarMenuQuantidade(remoteJid, cliente.nome);
         console.log(`[WhatsApp] Cliente ${cliente.nome} retornou. Menu de quantidade enviado.`);
