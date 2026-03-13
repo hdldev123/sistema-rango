@@ -1,5 +1,4 @@
 import makeWASocket, {
-    useMultiFileAuthState,
     DisconnectReason,
     WASocket,
     proto,
@@ -10,7 +9,7 @@ import pino from 'pino';
 import { Boom } from '@hapi/boom';
 import * as whatsappService from './whatsapp.service';
 import { WhatsAppPayload } from './whatsapp.service';
-import path from 'path';
+import { useSupabaseAuthState, clearSupabaseAuthState } from './supabase-auth-state.service';
 
 import {
     setSocket,
@@ -25,10 +24,10 @@ import {
 // ─── Estado Global ───────────────────────────────────────────────────
 
 /**
- * Diretório onde as credenciais de sessão do WhatsApp são salvas.
- * Isso evita ter que escanear o QR Code a cada reinício.
+ * Identificador da sessão no Supabase.
+ * As credenciais e chaves Signal são persistidas na tabela whatsapp_auth_state.
  */
-const AUTH_DIR = path.join(__dirname, '..', '..', 'auth_whatsapp');
+const SESSION_ID = process.env.WHATSAPP_SESSION_ID || 'rango-prod';
 
 /** Logger silencioso para evitar poluir o terminal */
 const logger = pino({ level: 'silent' });
@@ -46,7 +45,7 @@ const logger = pino({ level: 'silent' });
 export async function iniciarBaileys(): Promise<void> {
     console.log('[Baileys] 🔄 Iniciando conexão com WhatsApp...');
 
-    const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+    const { state, saveCreds } = await useSupabaseAuthState(SESSION_ID);
 
     // Busca a versão mais recente do protocolo WhatsApp Web
     // para evitar erro 405 (Connection Failure)
@@ -113,10 +112,9 @@ export async function iniciarBaileys(): Promise<void> {
                 setTimeout(() => iniciarBaileys(), 3000);
             } else {
                 console.log('[Baileys] ❌ Deslogado do WhatsApp. Limpando sessão e gerando novo QR Code...');
-                const fs = require('fs');
-                if (fs.existsSync(AUTH_DIR)) {
-                    fs.rmSync(AUTH_DIR, { recursive: true, force: true });
-                }
+                clearSupabaseAuthState(SESSION_ID).catch((err) =>
+                    console.error('[Baileys] Erro ao limpar sessão no Supabase:', err.message),
+                );
                 setTimeout(() => iniciarBaileys(), 3000);
             }
         }
