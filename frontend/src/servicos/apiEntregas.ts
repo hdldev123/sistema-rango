@@ -25,8 +25,8 @@ export interface LiberarLoteResponse {
   pedidosAfetados: number;
 }
 
-export const liberarLote = async (): Promise<LiberarLoteResponse> => {
-  const response = await api.post('/api/entregas/liberar-lote');
+export const liberarLote = async (pedidoIds: number[]): Promise<LiberarLoteResponse> => {
+  const response = await api.post('/api/entregas/liberar-lote', { pedidoIds });
   return response.data;
 };
 
