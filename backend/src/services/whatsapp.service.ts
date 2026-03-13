@@ -9,6 +9,7 @@ import {
     definirEstado,
     limparEstado,
 } from './bot-state.service';
+import type { ItemCarrinho } from './bot-state.service';
 import { getSocket, resolverJidParaEnvio } from './jid-resolver.service';
 
 // ─── Constantes ──────────────────────────────────────────────────────
@@ -561,15 +562,16 @@ async function enviarMenuProduto(remoteJid: string, quantidade: number): Promise
 }
 
 /**
- * Processa a escolha de produto e finaliza o pedido.
- * Valida o input, chama `pedidoService.criarAsync` com produtoId e quantidade exatos.
+ * Processa a escolha de produto e adiciona ao carrinho.
+ * Valida o input, salva no array `carrinho` da sessão e pergunta se quer continuar.
  */
-async function processarMenuProdutoEFinalizar(
+async function processarMenuProdutoAdicionarCarrinho(
     remoteJid: string,
     texto: string,
     cliente: ClienteWhatsappBanco,
     telefoneLimpo: string,
     quantidade: number,
+    carrinhoAtual: ItemCarrinho[],
 ): Promise<void> {
     // Buscar produtos ativos para validar o input
     const { data: produtos, error: dbErr } = await supabase
@@ -604,44 +606,121 @@ async function processarMenuProdutoEFinalizar(
 
     const produtoEscolhido = produtos[opcao - 1];
 
-    // Criar pedido com valores exatos
-    const pedidoInput = {
-        clienteId: cliente.id,
-        observacoes: `[Via WhatsApp] ${quantidade}x ${produtoEscolhido.nome}`,
-        itens: [{ produtoId: produtoEscolhido.id, quantidade }],
+    // Adicionar item ao carrinho
+    const novoItem: ItemCarrinho = {
+        produtoId: produtoEscolhido.id,
+        quantidade,
+        nomeProduto: produtoEscolhido.nome,
+        precoUnitario: Number(produtoEscolhido.preco),
     };
+    const carrinhoAtualizado = [...carrinhoAtual, novoItem];
 
-    const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
-
-    if (erros || !pedido) {
-        await enviarMensagem(
-            remoteJid,
-            `Desculpe, *${cliente.nome}*, tivemos um problema ao registrar seu pedido. 😔\nPor favor, tente novamente.`,
-        );
-        console.error('[WhatsApp] Erro ao criar pedido:', erros);
-        await limparEstado(telefoneLimpo);
-        return;
-    }
-
-    await limparEstado(telefoneLimpo);
-
-    const valorFormatado = pedido.valorTotal != null
-        ? `R$ ${Number(pedido.valorTotal).toFixed(2)}`
-        : 'a calcular';
+    // Transitar para MENU_CONTINUAR_COMPRANDO
+    await definirEstado(telefoneLimpo, EtapaConversa.MENU_CONTINUAR_COMPRANDO, {
+        carrinho: carrinhoAtualizado,
+        quantidadeEscolhida: undefined,
+    });
 
     await enviarMensagem(
         remoteJid,
-        `✅ Pedido registrado com sucesso!\n\n` +
-        `📋 *Pedido #${pedido.id}*\n` +
-        `🛒 *${quantidade}x ${produtoEscolhido.nome}*\n` +
-        `💰 *Valor Total:* ${valorFormatado}\n\n` +
-        `Vamos preparar tudo com carinho! Você receberá atualizações por aqui. 😊`,
+        `✅ *${quantidade}x ${produtoEscolhido.nome}* adicionado ao carrinho!\n\n` +
+        `Deseja pedir mais alguma coisa?\n\n` +
+        `*[1]* Sim, adicionar mais produtos\n` +
+        `*[2]* Não, finalizar meu pedido`,
     );
 
-    console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (${quantidade}x ${produtoEscolhido.nome}).`);
+    console.log(`[WhatsApp] Item adicionado ao carrinho de ${cliente.nome}: ${quantidade}x ${produtoEscolhido.nome}.`);
+}
 
-    // Notificar administrador
-    await notificarAdministrador(cliente.nome, cliente.endereco ?? null, `${quantidade}x ${produtoEscolhido.nome}`);
+/**
+ * Processa a resposta do menu "continuar comprando".
+ * [1] Volta para MENU_QUANTIDADE para adicionar mais itens.
+ * [2] Finaliza o pedido com todos os itens do carrinho.
+ */
+async function processarMenuContinuarComprando(
+    remoteJid: string,
+    texto: string,
+    cliente: ClienteWhatsappBanco,
+    telefoneLimpo: string,
+    carrinho: ItemCarrinho[],
+): Promise<void> {
+    const opcao = texto.trim();
+
+    switch (opcao) {
+        // Sim, adicionar mais produtos
+        case '1': {
+            await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
+            await enviarMenuQuantidade(remoteJid, cliente.nome);
+            console.log(`[WhatsApp] ${cliente.nome} optou por adicionar mais produtos ao carrinho.`);
+            return;
+        }
+
+        // Não, finalizar pedido
+        case '2': {
+            // Montar observações e input com todos os itens do carrinho
+            const descricaoItens = carrinho
+                .map(item => `${item.quantidade}x ${item.nomeProduto}`)
+                .join(', ');
+
+            const pedidoInput = {
+                clienteId: cliente.id,
+                observacoes: `[Via WhatsApp] ${descricaoItens}`,
+                itens: carrinho.map(item => ({
+                    produtoId: item.produtoId,
+                    quantidade: item.quantidade,
+                })),
+            };
+
+            const { pedido, erros } = await pedidoService.criarAsync(pedidoInput);
+
+            if (erros || !pedido) {
+                await enviarMensagem(
+                    remoteJid,
+                    `Desculpe, *${cliente.nome}*, tivemos um problema ao registrar seu pedido. 😔\nPor favor, tente novamente.`,
+                );
+                console.error('[WhatsApp] Erro ao criar pedido:', erros);
+                await limparEstado(telefoneLimpo);
+                return;
+            }
+
+            await limparEstado(telefoneLimpo);
+
+            const valorFormatado = pedido.valorTotal != null
+                ? `R$ ${Number(pedido.valorTotal).toFixed(2)}`
+                : 'a calcular';
+
+            // Montar resumo do carrinho
+            const resumoLinhas = carrinho.map(item => {
+                const subtotal = item.precoUnitario * item.quantidade;
+                return `  • ${item.quantidade}x ${item.nomeProduto} (R$ ${subtotal.toFixed(2)})`;
+            }).join('\n');
+
+            await enviarMensagem(
+                remoteJid,
+                `✅ Pedido registrado com sucesso!\n\n` +
+                `📋 *Pedido #${pedido.id}*\n` +
+                `🛒 *Itens:*\n${resumoLinhas}\n` +
+                `💰 *Valor Total:* ${valorFormatado}\n\n` +
+                `Vamos preparar tudo com carinho! Você receberá atualizações por aqui. 😊`,
+            );
+
+            console.log(`[WhatsApp] ✅ Pedido #${pedido.id} criado para ${cliente.nome} (${descricaoItens}).`);
+
+            // Notificar administrador
+            await notificarAdministrador(cliente.nome, cliente.endereco ?? null, descricaoItens);
+            return;
+        }
+
+        default: {
+            await enviarMensagem(
+                remoteJid,
+                `Hmm, não entendi. 🤔\nPor favor, responda apenas com o *número* da opção:\n\n` +
+                `*[1]* Sim, adicionar mais produtos\n` +
+                `*[2]* Não, finalizar meu pedido`,
+            );
+            return;
+        }
+    }
 }
 
 // ─── Fluxo de Onboarding (novo cliente) ──────────────────────────────
@@ -1008,7 +1087,7 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
         //    IMPORTANTE: MENU_QUANTIDADE, MENU_PRODUTO e MENU_PEDIDO_ATIVO não são onboarding.
         const estadoAtual = await obterEstado(telefoneLimpo);
 
-        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.MENU_QUANTIDADE && estadoAtual.etapa !== EtapaConversa.MENU_PRODUTO && estadoAtual.etapa !== EtapaConversa.MENU_PEDIDO_ATIVO) {
+        if (estadoAtual && estadoAtual.etapa !== EtapaConversa.MENU_QUANTIDADE && estadoAtual.etapa !== EtapaConversa.MENU_PRODUTO && estadoAtual.etapa !== EtapaConversa.MENU_CONTINUAR_COMPRANDO && estadoAtual.etapa !== EtapaConversa.MENU_PEDIDO_ATIVO) {
             // Cliente está no meio do cadastro — processar onboarding
             const clienteOnboarding = await processarOnboarding(remoteJid, texto, nomeContato, telefoneLimpo);
 
@@ -1074,7 +1153,22 @@ export async function processarMensagemAsync(payload: WhatsAppPayload): Promise<
                 console.warn('[WhatsApp] Estado MENU_PRODUTO sem quantidadeEscolhida. Reiniciando fluxo.');
                 return;
             }
-            await processarMenuProdutoEFinalizar(remoteJid, texto, cliente, telefoneLimpo, quantidade);
+            const carrinhoAtual = (estadoAtual.dados.carrinho ?? []) as ItemCarrinho[];
+            await processarMenuProdutoAdicionarCarrinho(remoteJid, texto, cliente, telefoneLimpo, quantidade, carrinhoAtual);
+            return;
+        }
+
+        // ── 8b. Sessão: verificar se está no menu de continuar comprando
+        if (estadoAtual?.etapa === EtapaConversa.MENU_CONTINUAR_COMPRANDO) {
+            const carrinho = (estadoAtual.dados.carrinho ?? []) as ItemCarrinho[];
+            if (carrinho.length === 0) {
+                // Estado corrompido — reiniciar fluxo
+                await definirEstado(telefoneLimpo, EtapaConversa.MENU_QUANTIDADE);
+                await enviarMenuQuantidade(remoteJid, cliente.nome);
+                console.warn('[WhatsApp] Estado MENU_CONTINUAR_COMPRANDO sem itens no carrinho. Reiniciando fluxo.');
+                return;
+            }
+            await processarMenuContinuarComprando(remoteJid, texto, cliente, telefoneLimpo, carrinho);
             return;
         }
 
