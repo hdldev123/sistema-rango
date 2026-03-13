@@ -11,6 +11,7 @@
  * - AGUARDANDO_ENDERECO: Bot aguarda o endereço de entrega.
  * - MENU_QUANTIDADE: Bot exibe menu de quantidades e aguarda escolha.
  * - MENU_PRODUTO: Bot exibe menu de produtos e aguarda escolha.
+ * - MENU_CONTINUAR_COMPRANDO: Bot pergunta se quer adicionar mais itens ou finalizar.
  * - MENU_PEDIDO_ATIVO: Bot exibe menu de ações para pedido em aberto.
  *
  * Sessões com mais de 30 minutos de inatividade são tratadas como expiradas.
@@ -27,7 +28,16 @@ export enum EtapaConversa {
     AGUARDANDO_ENDERECO = 'AGUARDANDO_ENDERECO',
     MENU_QUANTIDADE = 'MENU_QUANTIDADE',
     MENU_PRODUTO = 'MENU_PRODUTO',
+    MENU_CONTINUAR_COMPRANDO = 'MENU_CONTINUAR_COMPRANDO',
     MENU_PEDIDO_ATIVO = 'MENU_PEDIDO_ATIVO',
+}
+
+/** Item temporário no carrinho de compras da sessão */
+export interface ItemCarrinho {
+    produtoId: number;
+    quantidade: number;
+    nomeProduto: string;
+    precoUnitario: number;
 }
 
 /** Dados coletados durante o onboarding / sessão */
@@ -38,6 +48,8 @@ export interface DadosOnboarding {
     pedidoAtivoId?: number;
     /** Quantidade escolhida no menu de quantidades — carregada para o menu de produtos */
     quantidadeEscolhida?: number;
+    /** Carrinho temporário: acumula itens até o cliente finalizar */
+    carrinho?: ItemCarrinho[];
 }
 
 /** Estado completo de uma conversa */
