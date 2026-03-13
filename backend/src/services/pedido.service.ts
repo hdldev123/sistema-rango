@@ -298,31 +298,26 @@ export async function obterLoteEntregaAsync(): Promise<LoteEntregaDto> {
 
 // ─── Liberar Lote (Pronto → Em Entrega em massa) ─────────────────────
 /**
- * Move TODOS os pedidos com status Pronto(3) para Em Entrega(4) de uma vez.
- * Retorna a quantidade de pedidos afetados.
+ * Move apenas os pedidos cujos IDs foram informados de Pronto(3) para Em Entrega(4).
+ * Garante que só atualiza pedidos que ainda estejam com status Pronto.
+ * @param pedidoIds - IDs dos pedidos a serem liberados (vindos do frontend por lote).
  */
-export async function liberarLoteAsync(): Promise<{ pedidosAfetados: number }> {
-  // Buscar IDs dos pedidos prontos
-  const { data: pedidosProntos, error: findError } = await supabase
-    .from('pedidos')
-    .select('id')
-    .eq('status', StatusPedido.Pronto);
-
-  if (findError) throw new Error(findError.message);
-  if (!pedidosProntos || pedidosProntos.length === 0) {
+export async function liberarLoteAsync(pedidoIds: number[]): Promise<{ pedidosAfetados: number }> {
+  if (!pedidoIds || pedidoIds.length === 0) {
     return { pedidosAfetados: 0 };
   }
 
-  const ids = pedidosProntos.map((p: { id: number }) => p.id);
-
-  const { error: updateError } = await supabase
+  // Atualizar apenas os pedidos que estão com status Pronto E cujos IDs foram informados
+  const { data: atualizados, error: updateError } = await supabase
     .from('pedidos')
     .update({ status: StatusPedido.EmEntrega })
-    .in('id', ids);
+    .in('id', pedidoIds)
+    .eq('status', StatusPedido.Pronto)
+    .select('id');
 
   if (updateError) throw new Error(updateError.message);
 
-  return { pedidosAfetados: ids.length };
+  return { pedidosAfetados: atualizados?.length ?? 0 };
 }
 
 // ─── Pedidos Em Trânsito ─────────────────────────────────────────────

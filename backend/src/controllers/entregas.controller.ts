@@ -16,11 +16,22 @@ export async function obterLoteEntrega(_req: Request, res: Response, next: NextF
 
 /**
  * POST /api/entregas/liberar-lote
- * Move todos os pedidos com status Pronto(3) para Em Entrega(4) de uma vez.
+ * Move os pedidos informados (por ID) com status Pronto(3) para Em Entrega(4).
+ * Espera body: { pedidoIds: number[] }
  */
-export async function liberarLote(_req: Request, res: Response, next: NextFunction): Promise<void> {
+export async function liberarLote(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const resultado = await pedidoService.liberarLoteAsync();
+    const { pedidoIds } = req.body;
+
+    if (!Array.isArray(pedidoIds) || pedidoIds.length === 0) {
+      res.status(400).json({
+        sucesso: false,
+        mensagem: 'É necessário informar ao menos um pedidoId.',
+      });
+      return;
+    }
+
+    const resultado = await pedidoService.liberarLoteAsync(pedidoIds);
     res.json({
       sucesso: true,
       mensagem: `${resultado.pedidosAfetados} pedido(s) liberado(s) para entrega.`,
