@@ -221,7 +221,7 @@ export async function criarAsync(
 
   if (rpcError) throw new Error(rpcError.message);
 
-  // Decrementar estoque de cada produto
+  // Decrementar estoque de cada produto e auto-desativar se zerou
   for (const item of itensParaInserir) {
     const { error: estoqueErr } = await supabase.rpc('decrementar_estoque', {
       p_produto_id: item.produto_id,
@@ -229,6 +229,21 @@ export async function criarAsync(
     });
     if (estoqueErr) {
       console.error(`[PedidoService] Erro ao decrementar estoque do produto ${item.produto_id}:`, estoqueErr.message);
+    }
+
+    // Verificar se estoque zerou → desativar produto automaticamente
+    const { data: produtoAtual } = await supabase
+      .from('produtos')
+      .select('estoque')
+      .eq('id', item.produto_id)
+      .single();
+
+    if (produtoAtual && produtoAtual.estoque <= 0) {
+      await supabase
+        .from('produtos')
+        .update({ ativo: false })
+        .eq('id', item.produto_id);
+      console.log(`[PedidoService] Produto ${item.produto_id} desativado automaticamente (estoque zerado).`);
     }
   }
 

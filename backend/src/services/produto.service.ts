@@ -77,8 +77,16 @@ export async function obterCategoriasAsync(): Promise<string[]> {
   return categorias;
 }
 
+// ─── Sincronizar ativo ↔ estoque ─────────────────────────────────────
+function sincronizarAtivo(dados: { estoque?: number; ativo?: boolean }): void {
+  if (dados.estoque !== undefined) {
+    dados.ativo = dados.estoque > 0;
+  }
+}
+
 // ─── Criar ───────────────────────────────────────────────────────────
 export async function criarAsync(dto: CriarProdutoDto): Promise<ProdutoDto> {
+  const estoque = dto.estoque ?? 0;
   const { data, error } = await supabase
     .from('produtos')
     .insert({
@@ -86,8 +94,8 @@ export async function criarAsync(dto: CriarProdutoDto): Promise<ProdutoDto> {
       categoria: dto.categoria,
       descricao: dto.descricao ?? null,
       preco: dto.preco,
-      ativo: dto.ativo,
-      estoque: dto.estoque ?? 0,
+      ativo: estoque > 0,
+      estoque,
     })
     .select()
     .single();
@@ -101,16 +109,20 @@ export async function atualizarAsync(
   id: number,
   dto: AtualizarProdutoDto,
 ): Promise<ProdutoDto | null> {
+  // Hook: estoque controla visibilidade
+  const updatePayload: Record<string, unknown> = {
+    nome: dto.nome,
+    categoria: dto.categoria,
+    descricao: dto.descricao ?? null,
+    preco: dto.preco,
+    ativo: dto.ativo,
+    estoque: dto.estoque ?? 0,
+  };
+  sincronizarAtivo(updatePayload as { estoque?: number; ativo?: boolean });
+
   const { data, error } = await supabase
     .from('produtos')
-    .update({
-      nome: dto.nome,
-      categoria: dto.categoria,
-      descricao: dto.descricao ?? null,
-      preco: dto.preco,
-      ativo: dto.ativo,
-      estoque: dto.estoque ?? 0,
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single();

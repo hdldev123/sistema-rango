@@ -37,10 +37,23 @@ function FormularioProduto({ produto, aoSalvar }: FormularioProdutoProps) {
 
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
-    setFormData(prevState => ({
-      ...prevState,
-      [name]: type === 'checkbox' ? checked : type === 'number' ? parseFloat(value) : value
-    }));
+    let parsed: string | number | boolean;
+    if (type === 'checkbox') {
+      parsed = checked;
+    } else if (type === 'number') {
+      parsed = name === 'estoque' ? parseInt(value, 10) || 0 : parseFloat(value);
+    } else {
+      parsed = value;
+    }
+
+    setFormData(prevState => {
+      const next = { ...prevState, [name]: parsed };
+      // Auto-sync: estoque <= 0 desativa o produto
+      if (name === 'estoque') {
+        next.ativo = (parsed as number) > 0;
+      }
+      return next;
+    });
   };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
