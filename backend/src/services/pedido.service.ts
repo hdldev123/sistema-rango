@@ -221,6 +221,17 @@ export async function criarAsync(
 
   if (rpcError) throw new Error(rpcError.message);
 
+  // Decrementar estoque de cada produto
+  for (const item of itensParaInserir) {
+    const { error: estoqueErr } = await supabase.rpc('decrementar_estoque', {
+      p_produto_id: item.produto_id,
+      p_quantidade: item.quantidade,
+    });
+    if (estoqueErr) {
+      console.error(`[PedidoService] Erro ao decrementar estoque do produto ${item.produto_id}:`, estoqueErr.message);
+    }
+  }
+
   // Recarregar com relações
   const pedido = await obterPorIdAsync(pedidoId as number);
   return { pedido, erros: null };

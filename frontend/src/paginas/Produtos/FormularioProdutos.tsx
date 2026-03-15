@@ -14,6 +14,7 @@ function FormularioProduto({ produto, aoSalvar }: FormularioProdutoProps) {
     descricao: '',
     preco: 0,
     ativo: true,
+    estoque: 0,
   });
 
   const [erro, setErro] = useState<string | null>(null);
@@ -27,9 +28,10 @@ function FormularioProduto({ produto, aoSalvar }: FormularioProdutoProps) {
         descricao: produto.descricao || '',
         preco: produto.preco || 0,
         ativo: produto.ativo ?? true,
+        estoque: produto.estoque ?? 0,
       });
     } else {
-      setFormData({ nome: '', categoria: '', descricao: '', preco: 0, ativo: true });
+      setFormData({ nome: '', categoria: '', descricao: '', preco: 0, ativo: true, estoque: 0 });
     }
   }, [produto]);
 
@@ -75,6 +77,10 @@ function FormularioProduto({ produto, aoSalvar }: FormularioProdutoProps) {
       <div className="mb-4">
         <label htmlFor="preco" className="mb-1.5 block text-sm font-medium text-grafite-700">Preço</label>
         <input type="number" name="preco" step="0.01" value={formData.preco} onChange={handleChange} required className={inputClasses} />
+      </div>
+      <div className="mb-4">
+        <label htmlFor="estoque" className="mb-1.5 block text-sm font-medium text-grafite-700">Estoque</label>
+        <input type="number" name="estoque" step="1" min="0" value={formData.estoque} onChange={handleChange} required className={inputClasses} />
       </div>
       <div className="mb-4 flex items-center gap-3">
         <input

@@ -11,6 +11,7 @@ function mapToDto(p: any): ProdutoDto {
     descricao: p.descricao,
     preco: Number(p.preco),
     ativo: p.ativo,
+    estoque: p.estoque ?? 0,
     dataCriacao: p.data_criacao,
   };
 }
@@ -86,6 +87,7 @@ export async function criarAsync(dto: CriarProdutoDto): Promise<ProdutoDto> {
       descricao: dto.descricao ?? null,
       preco: dto.preco,
       ativo: dto.ativo,
+      estoque: dto.estoque ?? 0,
     })
     .select()
     .single();
@@ -107,6 +109,7 @@ export async function atualizarAsync(
       descricao: dto.descricao ?? null,
       preco: dto.preco,
       ativo: dto.ativo,
+      estoque: dto.estoque ?? 0,
     })
     .eq('id', id)
     .select()
